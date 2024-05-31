@@ -1,3 +1,4 @@
 /.idea/git_toolbox_prj.xml
 /target
 /*.db
+/*.db-journal

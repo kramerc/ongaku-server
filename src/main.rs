@@ -1,20 +1,18 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::sync::atomic::AtomicU32;
 
 use lofty::prelude::*;
 use lofty::probe::Probe;
 use log::{error, info};
+use ml_progress::{progress_builder};
 use regex::Regex;
-use rusqlite::{Connection};
+use rusqlite::{Connection, params};
 use uuid::Uuid;
 
 use crate::library::Track;
 
 mod library;
 mod logger;
-
-static COUNTER: AtomicU32 = AtomicU32::new(0);
 
 fn main() {
     logger::init().unwrap();
@@ -38,7 +36,9 @@ fn main() {
         sample_rate INTEGER NOT NULL,
         bit_depth INTEGER NOT NULL,
         channels INTEGER NOT NULL,
-        metadata TEXT NOT NULL
+        tags TEXT NOT NULL,
+        created TEXT NOT NULL,
+        modified TEXT NOT NULL
     )";
     connection.execute(query, ()).expect("Failed to create table");
 
@@ -47,8 +47,17 @@ fn main() {
     println!("Path: {:?}", path);
     println!("Path exists: {}", path.exists());
 
-    recurse_directory(path, &connection);
-    print!("\n{} tracks are in the database", count_tracks(&connection));
+    let count = count_files(path);
+    // let progress = progress!(count).unwrap();
+    let progress = progress_builder!(
+        "[" percent "] " pos_group "/" total_group " " bar_fill " (" eta_hms " @ " speed "it/s)"
+    )
+        .total(Some(count))
+        .thousands_separator(",")
+        .build().unwrap();
+    read_files(path, &connection, &progress);
+    progress.finish();
+    println!("{} tracks are in the database", count_tracks(&connection));
 }
 
 fn get_uuid_for_track(path: &std::path::Path, connection: &Connection) -> String {
@@ -60,9 +69,25 @@ fn get_uuid_for_track(path: &std::path::Path, connection: &Connection) -> String
     }).unwrap_or(Uuid::new_v4().to_string())
 }
 
-fn read_tags(path: &std::path::Path, connection: &Connection) -> Result<library::Track, OngakuError> {
+fn read_tags(path: &std::path::Path, connection: &Connection) -> Result<Option<Track>, OngakuError> {
     if !path.is_file() {
         return Err(OngakuError::NotFile());
+    }
+
+    // stat file
+    let metadata = std::fs::metadata(path).unwrap();
+    let created = chrono::DateTime::from(metadata.created().unwrap());
+    let modified = chrono::DateTime::from(metadata.modified().unwrap());
+
+    let existing_track = get_track(path, &connection).unwrap();
+    match existing_track {
+        Some(track) => {
+            if track.modified <= modified {
+                // File has not been modified since last scan
+                return Ok(None);
+            }
+        },
+        None => {}
     }
 
     let probe = Probe::open(path);
@@ -96,7 +121,7 @@ fn read_tags(path: &std::path::Path, connection: &Connection) -> Result<library:
         all_tags.insert(key, value);
     }
 
-    Ok(Track {
+    Ok(Some(Track {
         uuid: get_uuid_for_track(path, &connection),
         path: path.to_str().unwrap_or("").to_string(),
         extension: path.extension().unwrap_or_default().to_str().unwrap_or("").to_string(),
@@ -113,8 +138,10 @@ fn read_tags(path: &std::path::Path, connection: &Connection) -> Result<library:
         sample_rate: properties.sample_rate().unwrap_or(0),
         bit_depth: properties.bit_depth().unwrap_or(0),
         channels: properties.channels().unwrap_or(0),
-        tags: all_tags
-    })
+        tags: all_tags,
+        created,
+        modified,
+    }))
 }
 
 fn insert_track(track: &library::Track, connection: &Connection) -> Result<(), rusqlite::Error> {
@@ -135,9 +162,11 @@ fn insert_track(track: &library::Track, connection: &Connection) -> Result<(), r
         sample_rate,
         bit_depth,
         channels,
-        metadata
-    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)";
-    connection.execute(insert_query, &[
+        tags,
+        created,
+        modified
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)";
+    connection.execute(insert_query, params![
         &track.uuid,
         &track.path,
         &track.extension,
@@ -148,13 +177,15 @@ fn insert_track(track: &library::Track, connection: &Connection) -> Result<(), r
         &track.album_artist,
         &track.publisher,
         &track.catalog_number,
-        &track.duration_seconds.to_string(),
-        &track.audio_bitrate.to_string(),
-        &track.overall_bitrate.to_string(),
-        &track.sample_rate.to_string(),
-        &track.bit_depth.to_string(),
-        &track.channels.to_string(),
-        &serde_json::to_string(&track.tags).unwrap()
+        &track.duration_seconds,
+        &track.audio_bitrate,
+        &track.overall_bitrate,
+        &track.sample_rate,
+        &track.bit_depth,
+        &track.channels,
+        &serde_json::to_string(&track.tags).unwrap(),
+        &track.created,
+        &track.modified,
     ]).expect("Failed to insert");
 
     info!("Inserted track: {}", track.uuid);
@@ -176,9 +207,11 @@ fn update_track(track: &Track, connection: &Connection) -> Result<(), rusqlite::
         sample_rate = ?11,
         bit_depth = ?12,
         channels = ?13,
-        metadata = ?14
-        WHERE uuid = ?15";
-    connection.execute(update_query, &[
+        tags = ?14,
+        created = ?15,
+        modified = ?16
+        WHERE uuid = ?17";
+    connection.execute(update_query, params![
         &track.title,
         &track.artist,
         &track.album,
@@ -186,13 +219,15 @@ fn update_track(track: &Track, connection: &Connection) -> Result<(), rusqlite::
         &track.album_artist,
         &track.publisher,
         &track.catalog_number,
-        &track.duration_seconds.to_string(),
-        &track.audio_bitrate.to_string(),
-        &track.overall_bitrate.to_string(),
-        &track.sample_rate.to_string(),
-        &track.bit_depth.to_string(),
-        &track.channels.to_string(),
+        &track.duration_seconds,
+        &track.audio_bitrate,
+        &track.overall_bitrate,
+        &track.sample_rate,
+        &track.bit_depth,
+        &track.channels,
         &serde_json::to_string(&track.tags).unwrap(),
+        &track.created,
+        &track.modified,
         &track.uuid
     ])?;
 
@@ -208,9 +243,65 @@ fn upsert_track(track: &Track, connection: &Connection) -> Result<(), rusqlite::
     })?;
 
     if count == 0 {
-        return insert_track(&track, &connection)
+        insert_track(&track, &connection)
     } else {
         update_track(&track, &connection)
+    }
+}
+
+fn get_track(path: &std::path::Path, connection: &Connection) -> Result<Option<Track>, rusqlite::Error> {
+    let select_query = "SELECT
+            uuid,
+            title,
+            artist,
+            album,
+            genre,
+            album_artist,
+            publisher,
+            catalog_number,
+            duration_seconds,
+            audio_bitrate,
+            overall_bitrate,
+            sample_rate,
+            bit_depth,
+            channels,
+            path,
+            extension,
+            tags,
+            created,
+            modified
+        FROM tracks WHERE path = ?1 LIMIT 1";
+    let mut stmt = connection.prepare(select_query)?;
+    let tracks = stmt.query_map([path.to_str()], |row| {
+        let tags_json: String = row.get(16)?;
+        let tags: HashMap<String, String> = serde_json::from_str(tags_json.as_str()).unwrap();
+
+        Ok(Track {
+            uuid: row.get(0)?,
+            title: row.get(1)?,
+            artist: row.get(2)?,
+            album: row.get(3)?,
+            genre: row.get(4)?,
+            album_artist: row.get(5)?,
+            publisher: row.get(6)?,
+            catalog_number: row.get(7)?,
+            duration_seconds: row.get(8)?,
+            audio_bitrate: row.get(9)?,
+            overall_bitrate: row.get(10)?,
+            sample_rate: row.get(11)?,
+            bit_depth: row.get(12)?,
+            channels: row.get(13)?,
+            path: row.get(14)?,
+            extension: row.get(15)?,
+            created: row.get(17)?,
+            modified: row.get(18)?,
+            tags
+        })
+    })?;
+    let result = tracks.last();
+    match result {
+        Some(Ok(track)) => Ok(Some(track)),
+        _ => Ok(None)
     }
 }
 
@@ -221,17 +312,22 @@ fn count_tracks(connection: &Connection) -> u64 {
     }).unwrap()
 }
 
-fn recurse_directory(path: &std::path::Path, connection: &Connection) {
+fn read_files(path: &std::path::Path, connection: &Connection, progress: &ml_progress::Progress) {
     for entry in path.read_dir().unwrap() {
         let entry = entry.unwrap();
         let path = entry.path();
 
         if path.is_dir() {
-            recurse_directory(&path, &connection);
+            read_files(&path, &connection, progress);
         } else {
             let result = read_tags(&path, connection);
             match result {
                 Ok(track) => {
+                    if track.is_none() {
+                        progress.inc(1);
+                        continue;
+                    }
+                    let track = track.unwrap();
                     let result = upsert_track(&track, &connection);
                     match result {
                         Ok(_) => {},
@@ -239,7 +335,7 @@ fn recurse_directory(path: &std::path::Path, connection: &Connection) {
                             error!("Error inserting {}: {:?}", path.to_str().unwrap_or(""), e);
                         }
                     }
-                    print!("\rScanning tracks... {}", COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1);
+                    // print!("\rScanning tracks... {}", COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1);
                 },
                 Err(e) => {
                     // Only care about supported files
@@ -248,8 +344,24 @@ fn recurse_directory(path: &std::path::Path, connection: &Connection) {
                     }
                 }
             }
+            progress.inc(1);
         }
     }
+}
+
+fn count_files(path: &std::path::Path) -> u64 {
+    let mut count = 0;
+    for entry in path.read_dir().unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+
+        if path.is_dir() {
+            count += count_files(&path);
+        } else {
+            count += 1;
+        }
+    }
+    count
 }
 
 #[derive(Debug)]

@@ -1,9 +1,10 @@
 use std::collections::HashMap;
-use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct Track {
     pub uuid: String,
+    pub path: String,
+    pub extension: String,
     pub title: String,
     pub artist: String,
     pub album: String,
@@ -17,7 +18,7 @@ pub struct Track {
     pub sample_rate: u32,
     pub bit_depth: u8,
     pub channels: u8,
-    pub path: String,
-    pub extension: String,
     pub tags: HashMap<String, String>,
+    pub created: chrono::DateTime<chrono::Utc>,
+    pub modified: chrono::DateTime<chrono::Utc>,
 }

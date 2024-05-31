@@ -8,6 +8,8 @@ lofty = "0.19.2"
 serde_json = "1.0.117"
 serde = { version = "1.0.203", features = ["derive"] }
 regex = "1.10.4"
-rusqlite = { version = "0.31.0", features = ["bundled"] }
+rusqlite = { version = "0.31.0", features = ["bundled", "chrono"] }
 uuid = { version = "1.8.0", features = ["v4"] }
 log = "0.4.21"
+ml-progress = "0.1.0"
+chrono = "0.4.38"
