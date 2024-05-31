@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::sync::mpsc;
+use std::sync::mpsc::Sender;
+use std::thread;
 
 use lofty::prelude::*;
 use lofty::probe::Probe;
-use log::{error, info};
+use log::{debug, error, info};
 use ml_progress::{progress_builder};
 use regex::Regex;
 use rusqlite::{Connection, params};
@@ -47,29 +50,70 @@ fn main() {
     println!("Path: {:?}", path);
     println!("Path exists: {}", path.exists());
 
+    let modified_by_path = get_all_modified_by_path(&connection).unwrap();
     let count = count_files(path);
-    // let progress = progress!(count).unwrap();
     let progress = progress_builder!(
         "[" percent "] " pos_group "/" total_group " " bar_fill " (" eta_hms " @ " speed "it/s)"
     )
         .total(Some(count))
         .thousands_separator(",")
         .build().unwrap();
-    read_files(path, &connection, &progress);
-    progress.finish();
+
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        scan_dir(path, &tx, &modified_by_path, &progress);
+        progress.finish();
+    });
+
+    for track in rx {
+        // TODO: Improve performance, currently takes a while after an initial scan
+        let result = upsert_track(&track, &connection);
+        match result {
+            Ok(_) => {
+                debug!("Inserted/updated track: {}", track.path);
+            },
+            Err(e) => {
+                error!("Error inserting {}: {:?}", path.to_str().unwrap_or(""), e);
+            }
+        }
+    }
+
     println!("{} tracks are in the database", count_tracks(&connection));
 }
 
-fn get_uuid_for_track(path: &std::path::Path, connection: &Connection) -> String {
+struct PathModified {
+    path: String,
+    modified: chrono::DateTime<chrono::Utc>,
+}
+
+fn get_all_modified_by_path(connection: &Connection) -> Result<HashMap<String, chrono::DateTime<chrono::Utc>>, rusqlite::Error> {
+    let select_query = "SELECT path, modified FROM tracks";
+    let mut stmt = connection.prepare(select_query)?;
+
+    let mut result = HashMap::new();
+    let map = stmt.query_map([], |row| {
+        Ok(PathModified {
+            path: row.get(0)?,
+            modified: row.get(1)?
+        })
+    })?;
+    for item in map {
+        let item = item.unwrap();
+        result.insert(item.path, item.modified);
+    }
+    Ok(result)
+}
+
+fn get_uuid_for_track(path: &String, connection: &Connection) -> String {
     let select_query = "SELECT uuid FROM tracks WHERE path = ?1";
     let mut stmt = connection.prepare(select_query).unwrap();
 
-    stmt.query_row([path.to_str().unwrap()], |row| {
+    stmt.query_row([path.to_string()], |row| {
         row.get(0)
     }).unwrap_or(Uuid::new_v4().to_string())
 }
 
-fn read_tags(path: &std::path::Path, connection: &Connection) -> Result<Option<Track>, OngakuError> {
+fn read_tags(path: &std::path::Path) -> Result<Track, OngakuError> {
     if !path.is_file() {
         return Err(OngakuError::NotFile());
     }
@@ -78,17 +122,6 @@ fn read_tags(path: &std::path::Path, connection: &Connection) -> Result<Option<T
     let metadata = std::fs::metadata(path).unwrap();
     let created = chrono::DateTime::from(metadata.created().unwrap());
     let modified = chrono::DateTime::from(metadata.modified().unwrap());
-
-    let existing_track = get_track(path, &connection).unwrap();
-    match existing_track {
-        Some(track) => {
-            if track.modified <= modified {
-                // File has not been modified since last scan
-                return Ok(None);
-            }
-        },
-        None => {}
-    }
 
     let probe = Probe::open(path);
     if let Err(e) = probe {
@@ -121,8 +154,8 @@ fn read_tags(path: &std::path::Path, connection: &Connection) -> Result<Option<T
         all_tags.insert(key, value);
     }
 
-    Ok(Some(Track {
-        uuid: get_uuid_for_track(path, &connection),
+    Ok(Track {
+        uuid: None,
         path: path.to_str().unwrap_or("").to_string(),
         extension: path.extension().unwrap_or_default().to_str().unwrap_or("").to_string(),
         title: tag.title().as_deref().unwrap_or("").to_string(),
@@ -141,10 +174,11 @@ fn read_tags(path: &std::path::Path, connection: &Connection) -> Result<Option<T
         tags: all_tags,
         created,
         modified,
-    }))
+    })
 }
 
-fn insert_track(track: &library::Track, connection: &Connection) -> Result<(), rusqlite::Error> {
+fn insert_track(track: &Track, connection: &Connection) -> Result<(), rusqlite::Error> {
+    let uuid = get_uuid_for_track(&track.path, &connection);
     let insert_query = "INSERT INTO tracks (
         uuid,
         path,
@@ -167,7 +201,7 @@ fn insert_track(track: &library::Track, connection: &Connection) -> Result<(), r
         modified
     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)";
     connection.execute(insert_query, params![
-        &track.uuid,
+        &uuid,
         &track.path,
         &track.extension,
         &track.title,
@@ -188,7 +222,7 @@ fn insert_track(track: &library::Track, connection: &Connection) -> Result<(), r
         &track.modified,
     ]).expect("Failed to insert");
 
-    info!("Inserted track: {}", track.uuid);
+    debug!("Inserted track: {}", uuid);
     Ok(())
 }
 
@@ -210,7 +244,7 @@ fn update_track(track: &Track, connection: &Connection) -> Result<(), rusqlite::
         tags = ?14,
         created = ?15,
         modified = ?16
-        WHERE uuid = ?17";
+        WHERE path = ?17";
     connection.execute(update_query, params![
         &track.title,
         &track.artist,
@@ -228,17 +262,17 @@ fn update_track(track: &Track, connection: &Connection) -> Result<(), rusqlite::
         &serde_json::to_string(&track.tags).unwrap(),
         &track.created,
         &track.modified,
-        &track.uuid
+        &track.path,
     ])?;
 
-    info!("Updated track: {}", track.uuid);
+    debug!("Updated track: {}", track.path);
     Ok(())
 }
 
 fn upsert_track(track: &Track, connection: &Connection) -> Result<(), rusqlite::Error> {
-    let select_query = "SELECT COUNT(*) FROM tracks WHERE uuid = ?1";
+    let select_query = "SELECT COUNT(*) FROM tracks WHERE path = ?1";
     let mut stmt = connection.prepare(select_query)?;
-    let count: i32 = stmt.query_row([&track.uuid], |row| {
+    let count: i32 = stmt.query_row([&track.path], |row| {
         row.get(0)
     })?;
 
@@ -312,36 +346,30 @@ fn count_tracks(connection: &Connection) -> u64 {
     }).unwrap()
 }
 
-fn read_files(path: &std::path::Path, connection: &Connection, progress: &ml_progress::Progress) {
+fn scan_dir(path: &std::path::Path, tx: &Sender<Track>, modified_by_path: &HashMap<String, chrono::DateTime<chrono::Utc>>, progress: &ml_progress::Progress) {
     for entry in path.read_dir().unwrap() {
         let entry = entry.unwrap();
         let path = entry.path();
 
         if path.is_dir() {
-            read_files(&path, &connection, progress);
+            scan_dir(&path, &tx, &modified_by_path, progress);
         } else {
-            let result = read_tags(&path, connection);
-            match result {
-                Ok(track) => {
-                    if track.is_none() {
-                        progress.inc(1);
-                        continue;
-                    }
-                    let track = track.unwrap();
-                    let result = upsert_track(&track, &connection);
-                    match result {
-                        Ok(_) => {},
-                        Err(e) => {
-                            error!("Error inserting {}: {:?}", path.to_str().unwrap_or(""), e);
+            let metadata = std::fs::metadata(&path).unwrap();
+            let modified: chrono::DateTime<chrono::Utc> = chrono::DateTime::from(metadata.modified().unwrap());
+            let modified_last_scan = match modified_by_path.get(path.to_str().unwrap()) {
+                Some(modified) => modified.clone(),
+                None => chrono::DateTime::from(std::time::SystemTime::UNIX_EPOCH)
+            };
+            if modified > modified_last_scan {
+                // File has been modified since last scan
+                match read_tags(&path) {
+                    Ok(track) => tx.send(track).unwrap(),
+                    Err(e) => {
+                        // Only care about supported files
+                        if lofty::file::FileType::from_path(&path).is_some() {
+                            error!("Error reading tags: {:?}", e)
                         }
-                    }
-                    // print!("\rScanning tracks... {}", COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1);
-                },
-                Err(e) => {
-                    // Only care about supported files
-                    if lofty::file::FileType::from_path(&path).is_some() {
-                        error!("Error reading {}: {:?}", path.to_str().unwrap_or(""), e);
-                    }
+                        }
                 }
             }
             progress.inc(1);

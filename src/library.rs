@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct Track {
-    pub uuid: String,
+    pub uuid: Option<String>,
     pub path: String,
     pub extension: String,
     pub title: String,
