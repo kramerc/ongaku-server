@@ -3,13 +3,19 @@ name = "ongaku-server"
 version = "0.1.0"
 edition = "2021"
 
+[workspace]
+members = [".", "entity", "migration"]
+
 [dependencies]
 lofty = "0.19.2"
 serde_json = "1.0.117"
 serde = { version = "1.0.203", features = ["derive"] }
 regex = "1.10.4"
-rusqlite = { version = "0.31.0", features = ["bundled", "chrono"] }
 uuid = { version = "1.8.0", features = ["v4"] }
 log = "0.4.21"
 ml-progress = "0.1.0"
 chrono = "0.4.38"
+tokio = { version = "1.0.0", features = ["rt", "rt-multi-thread", "macros"] }
+sea-orm = { version = "0.12.15", features = ["sqlx-sqlite", "runtime-tokio-native-tls", "macros"] }
+entity = { path = "entity" }
+migration = { path = "migration" }
