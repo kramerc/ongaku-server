@@ -18,8 +18,7 @@ impl MigrationTrait for Migration {
                             .auto_increment()
                             .primary_key(),
                     )
-                    .col(ColumnDef::new(Track::Uuid).string().not_null().unique_key())
-                    .col(ColumnDef::new(Track::Path).string().not_null())
+                    .col(ColumnDef::new(Track::Path).string().not_null().unique_key())
                     .col(ColumnDef::new(Track::Extension).string().not_null())
                     .col(ColumnDef::new(Track::Title).string().not_null())
                     .col(ColumnDef::new(Track::Artist).string().not_null())
@@ -53,7 +52,6 @@ impl MigrationTrait for Migration {
 enum Track {
     Table,
     Id,
-    Uuid,
     Path,
     Extension,
     Title,
