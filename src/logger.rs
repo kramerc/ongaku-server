@@ -16,7 +16,8 @@ impl log::Log for SimpleLogger {
             let message = record.args().to_string();
             if message.contains("MPEG: Using bitrate to estimate duration") ||
                message.contains("Skipping empty \"data\" atom") ||
-               message.contains("Encountered an ID3v2 tag. This tag cannot be rewritten to the FLAC file!") {
+               message.contains("Encountered an ID3v2 tag. This tag cannot be rewritten to the FLAC file!") ||
+               message.contains("Replaced frame with ID") {
                 return; // Skip these warnings
             }
 

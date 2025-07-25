@@ -24,12 +24,12 @@ async fn main() -> Result<(), DbErr> {
     let config = config::Config::from_env();
 
     let mut opt = ConnectOptions::new(&config.database_url);
-    opt.max_connections(100)
-        .min_connections(5)
-        .connect_timeout(Duration::from_secs(8))
-        .acquire_timeout(Duration::from_secs(8))
-        .idle_timeout(Duration::from_secs(8))
-        .max_lifetime(Duration::from_secs(8))
+    opt.max_connections(150)       // Increased from 100 for better concurrency
+        .min_connections(10)       // Increased from 5 to maintain ready connections
+        .connect_timeout(Duration::from_secs(10))  // Slightly increased
+        .acquire_timeout(Duration::from_secs(10))  // Slightly increased
+        .idle_timeout(Duration::from_secs(300))    // Increased from 8 seconds
+        .max_lifetime(Duration::from_secs(1800))   // Increased from 8 seconds
         .sqlx_logging(false); // Disable SQL logging to clean up progress bar display
     let db: DatabaseConnection = Database::connect(opt).await?;
     Migrator::up(&db, None).await?;
@@ -49,8 +49,8 @@ async fn main() -> Result<(), DbErr> {
         let scan_config = scanner::ScanConfig {
             music_path: music_path_str,
             show_progress: true,
-            batch_size: 100,
-            path_batch_size: 1000,
+            batch_size: 100,         // Smaller batches for consistency
+            path_batch_size: 2500,   // Balanced query efficiency
             use_optimized_scanning: true,
         };
 

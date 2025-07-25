@@ -2,7 +2,8 @@ use std::path::PathBuf;
 use std::collections::HashMap;
 use std::fs::Metadata;
 use std::path::Path;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Semaphore};
+use std::sync::Arc;
 use indicatif::{ProgressBar, ProgressStyle, MultiProgress};
 use log::{info, error};
 use async_recursion::async_recursion;
@@ -28,8 +29,8 @@ impl Default for ScanConfig {
         Self {
             music_path: "/mnt/shucked/Music".to_string(),
             show_progress: true,
-            batch_size: 100,
-            path_batch_size: 1000,  // Check 1000 paths at a time
+            batch_size: 100,        // Smaller batches for more consistent performance
+            path_batch_size: 2500,  // Balanced for good query efficiency
             use_optimized_scanning: true,
         }
     }
@@ -76,7 +77,7 @@ pub async fn scan_music_library(
     // Temporarily allow initial log messages to display cleanly
     info!("Progress bar initialized, starting scan operations...");
 
-    let (tx, mut rx) = mpsc::channel(1000);  // Increased channel buffer
+    let (tx, mut rx) = mpsc::channel(2000);  // Balanced channel buffer for improved performance
     let tx_clone = tx.clone();
 
     // Use optimized scanning approach
@@ -305,6 +306,9 @@ pub async fn scan_dir_optimized(
     let mut file_paths = Vec::new();
     collect_file_paths(path, &mut file_paths);
 
+    // Create a semaphore to limit concurrent file processing
+    let semaphore = Arc::new(Semaphore::new(50)); // Limit to 50 concurrent file operations
+
     // Process files in batches
     for chunk in file_paths.chunks(batch_size) {
         let paths: Vec<String> = chunk.iter()
@@ -351,10 +355,15 @@ pub async fn scan_dir_optimized(
                 .unwrap_or_else(|| chrono::DateTime::from(std::time::SystemTime::UNIX_EPOCH));
 
             if modified > modified_last_scan {
-                // File has been modified since last scan
+                // File has been modified since last scan - spawn async task for processing
                 let tx = tx.clone();
                 let file_path = file_path.clone();
+                let semaphore_permit = semaphore.clone();
+
                 tokio::spawn(async move {
+                    // Acquire a permit to limit concurrent operations
+                    let _permit = semaphore_permit.acquire().await.unwrap();
+
                     let track = read_tags(&file_path, &metadata).await;
                     match track {
                         Ok(track) => {
@@ -374,9 +383,9 @@ pub async fn scan_dir_optimized(
                             }
                         }
                     }
+                    // Permit is automatically released when _permit is dropped
                 });
             }
-            // Progress will be updated after database upsert, not here
         }
     }
 }
