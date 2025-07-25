@@ -1,7 +1,8 @@
 use axum::{
+    body::Body,
     extract::{Path, Query, State},
-    http::StatusCode,
-    response::Json,
+    http::{header, HeaderMap, StatusCode},
+    response::{Json, Response},
     routing::{get, post},
     Router,
 };
@@ -13,6 +14,9 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::path::PathBuf;
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tower_http::services::ServeFile;
 
 use entity::prelude::Track;
@@ -114,6 +118,7 @@ pub fn create_router(state: AppState) -> Router {
     Router::new()
         .route("/tracks", get(get_tracks))
         .route("/tracks/:id", get(get_track_by_id))
+        .route("/tracks/:id/play", get(play_track))
         .route("/tracks/search", get(search_tracks))
         .route("/stats", get(get_stats))
         .route("/artists", get(get_artists))
@@ -193,6 +198,142 @@ async fn get_track_by_id(
     match track {
         Some(track) => Ok(Json(TrackResponse::from(track))),
         None => Err(StatusCode::NOT_FOUND),
+    }
+}
+
+// GET /tracks/:id/play - Stream audio file with range support for web browsers
+async fn play_track(
+    State(state): State<AppState>,
+    Path(id): Path<i32>,
+    headers: HeaderMap,
+) -> Result<Response<Body>, StatusCode> {
+    // Find the track in the database
+    let track = Track::find_by_id(id)
+        .one(&state.db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let track = match track {
+        Some(track) => track,
+        None => return Err(StatusCode::NOT_FOUND),
+    };
+
+    // Get the file path
+    let file_path = PathBuf::from(&track.path);
+
+    // Check if file exists
+    if !file_path.exists() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    // Get file metadata
+    let metadata = tokio::fs::metadata(&file_path)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let file_size = metadata.len();
+
+    // Determine MIME type
+    let mime_type = mime_guess::from_path(&file_path)
+        .first_or_octet_stream()
+        .to_string();
+
+    // Parse Range header if present
+    let range_header = headers.get(header::RANGE);
+
+    if let Some(range_value) = range_header {
+        // Handle range request
+        let range_str = range_value.to_str().map_err(|_| StatusCode::BAD_REQUEST)?;
+
+        if !range_str.starts_with("bytes=") {
+            return Err(StatusCode::RANGE_NOT_SATISFIABLE);
+        }
+
+        let range_part = &range_str[6..]; // Remove "bytes="
+        let (start, end) = parse_range(range_part, file_size)?;
+
+        // Open file and seek to start position
+        let mut file = File::open(&file_path)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        file.seek(std::io::SeekFrom::Start(start))
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        // Read the requested range
+        let content_length = end - start + 1;
+        let mut buffer = vec![0u8; content_length as usize];
+        file.read_exact(&mut buffer)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        // Build response with 206 Partial Content
+        let response = Response::builder()
+            .status(StatusCode::PARTIAL_CONTENT)
+            .header(header::CONTENT_TYPE, mime_type)
+            .header(header::CONTENT_LENGTH, content_length.to_string())
+            .header(header::CONTENT_RANGE, format!("bytes {}-{}/{}", start, end, file_size))
+            .header(header::ACCEPT_RANGES, "bytes")
+            .header(header::CACHE_CONTROL, "public, max-age=3600")
+            .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+            .header(header::ACCESS_CONTROL_ALLOW_METHODS, "GET, HEAD, OPTIONS")
+            .header(header::ACCESS_CONTROL_ALLOW_HEADERS, "Range, Content-Range, Content-Length")
+            .body(Body::from(buffer))
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        Ok(response)
+    } else {
+        // Return full file
+        let file_content = tokio::fs::read(&file_path)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        let response = Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, mime_type)
+            .header(header::CONTENT_LENGTH, file_size.to_string())
+            .header(header::ACCEPT_RANGES, "bytes")
+            .header(header::CACHE_CONTROL, "public, max-age=3600")
+            .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+            .header(header::ACCESS_CONTROL_ALLOW_METHODS, "GET, HEAD, OPTIONS")
+            .header(header::ACCESS_CONTROL_ALLOW_HEADERS, "Range, Content-Range, Content-Length")
+            .body(Body::from(file_content))
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        Ok(response)
+    }
+}
+
+// Helper function to parse Range header
+fn parse_range(range_str: &str, file_size: u64) -> Result<(u64, u64), StatusCode> {
+    if let Some(dash_pos) = range_str.find('-') {
+        let start_str = &range_str[..dash_pos];
+        let end_str = &range_str[dash_pos + 1..];
+
+        let start = if start_str.is_empty() {
+            // Suffix range like "-500" (last 500 bytes)
+            let suffix_length: u64 = end_str.parse().map_err(|_| StatusCode::RANGE_NOT_SATISFIABLE)?;
+            file_size.saturating_sub(suffix_length)
+        } else {
+            start_str.parse().map_err(|_| StatusCode::RANGE_NOT_SATISFIABLE)?
+        };
+
+        let end = if end_str.is_empty() {
+            // Range like "500-" (from 500 to end)
+            file_size - 1
+        } else {
+            let parsed_end: u64 = end_str.parse().map_err(|_| StatusCode::RANGE_NOT_SATISFIABLE)?;
+            std::cmp::min(parsed_end, file_size - 1)
+        };
+
+        if start <= end && end < file_size {
+            Ok((start, end))
+        } else {
+            Err(StatusCode::RANGE_NOT_SATISFIABLE)
+        }
+    } else {
+        Err(StatusCode::RANGE_NOT_SATISFIABLE)
     }
 }
 

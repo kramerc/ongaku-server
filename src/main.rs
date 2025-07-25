@@ -67,17 +67,22 @@ async fn main() -> Result<(), DbErr> {
 
     // Start API server (this will run indefinitely)
     let api_handle = tokio::spawn(async move {
-        start_api_server(api_db, bind_address).await;
+        if let Err(e) = start_api_server(api_db, bind_address).await {
+            error!("API server failed to start: {}", e);
+        }
     });
 
     // Wait for API server (it runs indefinitely)
     // The scan runs in the background and doesn't block the API
-    api_handle.await.unwrap();
+    if let Err(e) = api_handle.await {
+        error!("API server task failed: {}", e);
+        return Err(DbErr::Custom("API server failed".to_string()));
+    }
 
     Ok(())
 }
 
-async fn start_api_server(db: DatabaseConnection, bind_address: String) {
+async fn start_api_server(db: DatabaseConnection, bind_address: String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = config::Config::from_env();
     let state = api::AppState {
         db,
@@ -88,11 +93,19 @@ async fn start_api_server(db: DatabaseConnection, bind_address: String) {
         .nest("/api/v1", api::create_router(state))
         .layer(CorsLayer::permissive());
 
-    let listener = TcpListener::bind(&bind_address).await.unwrap();
+    let listener = match TcpListener::bind(&bind_address).await {
+        Ok(listener) => listener,
+        Err(e) => {
+            error!("Failed to bind to address {}: {}", bind_address, e);
+            return Err(Box::new(e));
+        }
+    };
+
     info!("API server starting on http://{}", bind_address);
     info!("API endpoints available at:");
     info!("  GET /api/v1/tracks - List tracks with pagination");
     info!("  GET /api/v1/tracks/:id - Get track by ID");
+    info!("  GET /api/v1/tracks/:id/play - Stream audio file");
     info!("  GET /api/v1/tracks/search?q=query - Search tracks");
     info!("  GET /api/v1/stats - Get database statistics");
     info!("  GET /api/v1/artists - Get list of artists");
@@ -104,5 +117,10 @@ async fn start_api_server(db: DatabaseConnection, bind_address: String) {
     info!("  http://{}/api/v1/docs - Interactive Swagger UI", bind_address);
     info!("  http://{}/api/v1/openapi.yaml - OpenAPI 3.0 specification", bind_address);
 
-    axum::serve(listener, app).await.unwrap();
+    if let Err(e) = axum::serve(listener, app).await {
+        error!("Server error: {}", e);
+        return Err(Box::new(e));
+    }
+
+    Ok(())
 }

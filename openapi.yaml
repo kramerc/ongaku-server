@@ -126,6 +126,128 @@ paths:
       tags:
         - Tracks
 
+  /tracks/{id}/play:
+    get:
+      summary: Stream audio file
+      description: |
+        Stream the audio file for the specified track. This endpoint supports HTTP range requests
+        for efficient streaming in web browsers and media players.
+
+        Features:
+        - HTTP Range support for partial content streaming
+        - Proper MIME type detection based on file extension
+        - CORS headers for web browser compatibility
+        - Efficient file streaming with caching headers
+      parameters:
+        - name: id
+          in: path
+          description: Track ID
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: Range
+          in: header
+          description: HTTP Range header for partial content requests (e.g., "bytes=0-1023")
+          required: false
+          schema:
+            type: string
+            pattern: '^bytes=\d*-\d*$'
+            example: "bytes=0-1023"
+      responses:
+        '200':
+          description: Full audio file content
+          headers:
+            Content-Type:
+              description: MIME type of the audio file
+              schema:
+                type: string
+                example: "audio/mpeg"
+            Content-Length:
+              description: Size of the audio file in bytes
+              schema:
+                type: integer
+                format: int64
+            Accept-Ranges:
+              description: Indicates support for range requests
+              schema:
+                type: string
+                enum: ["bytes"]
+            Cache-Control:
+              description: Cache control header
+              schema:
+                type: string
+                example: "public, max-age=3600"
+            Access-Control-Allow-Origin:
+              description: CORS header
+              schema:
+                type: string
+                example: "*"
+          content:
+            audio/*:
+              schema:
+                type: string
+                format: binary
+        '206':
+          description: Partial content (range request response)
+          headers:
+            Content-Type:
+              description: MIME type of the audio file
+              schema:
+                type: string
+                example: "audio/mpeg"
+            Content-Length:
+              description: Size of the requested range in bytes
+              schema:
+                type: integer
+                format: int64
+            Content-Range:
+              description: Byte range of the partial content
+              schema:
+                type: string
+                example: "bytes 0-1023/2048000"
+            Accept-Ranges:
+              description: Indicates support for range requests
+              schema:
+                type: string
+                enum: ["bytes"]
+            Cache-Control:
+              description: Cache control header
+              schema:
+                type: string
+                example: "public, max-age=3600"
+            Access-Control-Allow-Origin:
+              description: CORS header
+              schema:
+                type: string
+                example: "*"
+          content:
+            audio/*:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Track or audio file not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '416':
+          description: Range not satisfiable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      tags:
+        - Tracks
+        - Audio Streaming
+
   /tracks/search:
     get:
       summary: Search tracks

@@ -98,12 +98,15 @@ The server will:
 
 - `GET /api/v1/tracks` - List tracks with pagination and filters
 - `GET /api/v1/tracks/:id` - Get a specific track by ID
+- `GET /api/v1/tracks/:id/play` - Stream audio file (supports HTTP range requests)
 - `GET /api/v1/tracks/search?q=query` - Search tracks
 - `GET /api/v1/stats` - Get database statistics
 - `GET /api/v1/artists` - Get list of unique artists
 - `GET /api/v1/albums` - Get list of unique albums
 - `GET /api/v1/genres` - Get list of unique genres
 - `POST /api/v1/rescan` - Trigger a music library rescan
+
+For detailed API documentation, visit `http://localhost:4000/api/v1/docs` when the server is running.
 
 ## Migration from SQLite
 

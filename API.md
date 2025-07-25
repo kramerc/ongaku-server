@@ -47,6 +47,46 @@ Get a specific track by ID.
 curl "http://localhost:4000/api/v1/tracks/123"
 ```
 
+#### GET /tracks/:id/play
+Stream audio file for the specified track. This endpoint supports HTTP range requests for efficient streaming in web browsers.
+
+**Features:**
+- HTTP Range support for partial content streaming
+- Proper MIME type detection based on file extension
+- CORS headers for web browser compatibility
+- Efficient file streaming with caching headers
+
+**Example:**
+```bash
+# Stream full file
+curl "http://localhost:4000/api/v1/tracks/123/play" -o song.mp3
+
+# Request specific byte range (browsers do this automatically)
+curl -H "Range: bytes=0-1023" "http://localhost:4000/api/v1/tracks/123/play"
+```
+
+**HTML5 Audio Example:**
+```html
+<audio controls>
+  <source src="http://localhost:4000/api/v1/tracks/123/play" type="audio/mpeg">
+  Your browser does not support the audio element.
+</audio>
+```
+
+**Response Headers:**
+- `Content-Type`: Detected MIME type (e.g., `audio/mpeg`, `audio/flac`)
+- `Accept-Ranges`: `bytes` (indicates range support)
+- `Content-Length`: File size or range size
+- `Content-Range`: Byte range for partial content (206 responses)
+- `Cache-Control`: `public, max-age=3600` (1 hour cache)
+- CORS headers for web browser compatibility
+
+**Status Codes:**
+- `200 OK`: Full file content
+- `206 Partial Content`: Range request response  
+- `404 Not Found`: Track or file not found
+- `416 Range Not Satisfiable`: Invalid range request
+
 #### GET /tracks/search
 Search tracks across multiple fields.
 
