@@ -6,6 +6,7 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        // Create the table
         manager
             .create_table(
                 Table::create()
@@ -41,7 +42,113 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Track::Modified).timestamp_with_time_zone().not_null())
                     .to_owned(),
             )
-            .await
+            .await?;
+
+        // Create indexes for optimized scanning and querying
+
+        // Index on modified timestamp for efficient scanning
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_track_modified")
+                    .table(Track::Table)
+                    .col(Track::Modified)
+                    .to_owned(),
+            )
+            .await?;
+
+        // Index on path for fast lookups during scanning
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_track_path")
+                    .table(Track::Table)
+                    .col(Track::Path)
+                    .to_owned(),
+            )
+            .await?;
+
+        // Composite index for artist + album queries (common in music apps)
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_track_artist_album")
+                    .table(Track::Table)
+                    .col(Track::Artist)
+                    .col(Track::Album)
+                    .to_owned(),
+            )
+            .await?;
+
+        // Index on album_artist for album grouping
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_track_album_artist")
+                    .table(Track::Table)
+                    .col(Track::AlbumArtist)
+                    .to_owned(),
+            )
+            .await?;
+
+        // Index on album for album-based queries
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_track_album")
+                    .table(Track::Table)
+                    .col(Track::Album)
+                    .to_owned(),
+            )
+            .await?;
+
+        // Index on genre for filtering
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_track_genre")
+                    .table(Track::Table)
+                    .col(Track::Genre)
+                    .to_owned(),
+            )
+            .await?;
+
+        // Index on year for chronological queries
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_track_year")
+                    .table(Track::Table)
+                    .col(Track::Year)
+                    .to_owned(),
+            )
+            .await?;
+
+        // Composite index for album track ordering
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_track_album_disc_track")
+                    .table(Track::Table)
+                    .col(Track::Album)
+                    .col(Track::DiscNumber)
+                    .col(Track::TrackNumber)
+                    .to_owned(),
+            )
+            .await?;
+
+        // Index on extension for file type filtering
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_track_extension")
+                    .table(Track::Table)
+                    .col(Track::Extension)
+                    .to_owned(),
+            )
+            .await?;
+
+        Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {

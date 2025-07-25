@@ -30,8 +30,7 @@ async fn main() -> Result<(), DbErr> {
         .acquire_timeout(Duration::from_secs(8))
         .idle_timeout(Duration::from_secs(8))
         .max_lifetime(Duration::from_secs(8))
-        .sqlx_logging(true)
-        .sqlx_logging_level(log::LevelFilter::Info);
+        .sqlx_logging(false); // Disable SQL logging to clean up progress bar display
     let db: DatabaseConnection = Database::connect(opt).await?;
     Migrator::up(&db, None).await?;
 
@@ -51,6 +50,8 @@ async fn main() -> Result<(), DbErr> {
             music_path: music_path_str,
             show_progress: true,
             batch_size: 100,
+            path_batch_size: 1000,
+            use_optimized_scanning: true,
         };
 
         match scanner::scan_music_library(&scan_db, scan_config).await {

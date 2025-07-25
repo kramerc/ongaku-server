@@ -365,6 +365,8 @@ async fn rescan_library(
             music_path,
             show_progress: true,
             batch_size: 100,
+            path_batch_size: 1000,
+            use_optimized_scanning: true,
         };
 
         match crate::scanner::scan_music_library(&db, scan_config).await {

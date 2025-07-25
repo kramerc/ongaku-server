@@ -12,6 +12,14 @@ impl log::Log for SimpleLogger {
 
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
+            // Filter out noisy warnings during scanning
+            let message = record.args().to_string();
+            if message.contains("MPEG: Using bitrate to estimate duration") ||
+               message.contains("Skipping empty \"data\" atom") ||
+               message.contains("Encountered an ID3v2 tag. This tag cannot be rewritten to the FLAC file!") {
+                return; // Skip these warnings
+            }
+
             println!("{} - {}", record.level(), record.args());
         }
     }

@@ -13,7 +13,8 @@ serde = { version = "1.0.203", features = ["derive"] }
 regex = "1.10.4"
 uuid = { version = "1.8.0", features = ["v4"] }
 log = "0.4.21"
-ml-progress = "0.1.0"
+indicatif = "0.17.8"
+indicatif-log-bridge = "0.2.2"
 chrono = "0.4.38"
 tokio = { version = "1.0.0", features = ["rt", "rt-multi-thread", "macros"] }
 sea-orm = { version = "0.12.15", features = ["sqlx-postgres", "runtime-tokio-native-tls", "macros"] }
