@@ -16,7 +16,7 @@ impl Config {
                 .unwrap_or_else(|_| "3000".to_string())
                 .parse()
                 .unwrap_or(3000),
-            database_url: env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://ongaku.db?mode=rwc".to_string()),
+            database_url: env::var("DATABASE_URL").unwrap_or_else(|_| "postgres://username:password@host:5432/database".to_string()),
         }
     }
 

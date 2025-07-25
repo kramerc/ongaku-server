@@ -16,7 +16,7 @@ log = "0.4.21"
 ml-progress = "0.1.0"
 chrono = "0.4.38"
 tokio = { version = "1.0.0", features = ["rt", "rt-multi-thread", "macros"] }
-sea-orm = { version = "0.12.15", features = ["sqlx-sqlite", "runtime-tokio-native-tls", "macros"] }
+sea-orm = { version = "0.12.15", features = ["sqlx-postgres", "runtime-tokio-native-tls", "macros"] }
 entity = { path = "entity" }
 migration = { path = "migration" }
 async-recursion = "1.1.1"
