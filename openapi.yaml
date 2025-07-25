@@ -8,10 +8,12 @@ info:
     - Browsing tracks with pagination and filtering
     - Searching across tracks, artists, albums, and genres
     - Retrieving individual track details
+    - Streaming audio files with HTTP range support
+    - Accessing album artwork images
     - Getting library statistics
     - Managing music library rescans
 
-    The server automatically scans a configured music directory and extracts metadata from audio files.
+    The server automatically scans a configured music directory and extracts metadata and album art from audio files.
   version: 1.0.0
   contact:
     name: Ongaku Music Server
@@ -247,6 +249,80 @@ paths:
       tags:
         - Tracks
         - Audio Streaming
+
+  /tracks/{id}/albumart:
+    get:
+      summary: Get album art for track
+      description: |
+        Retrieve the album art image for the specified track. This endpoint serves
+        the embedded album art extracted from the audio file during scanning.
+
+        Features:
+        - Serves images in original format (JPEG, PNG, WebP)
+        - Proper MIME type detection and headers
+        - Long-term caching for efficient delivery
+        - CORS headers for web browser compatibility
+      parameters:
+        - name: id
+          in: path
+          description: Track ID
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Album art image
+          headers:
+            Content-Type:
+              description: MIME type of the image
+              schema:
+                type: string
+                enum: ["image/jpeg", "image/png", "image/webp"]
+                example: "image/jpeg"
+            Content-Length:
+              description: Size of the image file in bytes
+              schema:
+                type: integer
+                format: int64
+            Cache-Control:
+              description: Cache control header for long-term caching
+              schema:
+                type: string
+                example: "public, max-age=86400"
+            Access-Control-Allow-Origin:
+              description: CORS header
+              schema:
+                type: string
+                example: "*"
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Track not found or no album art available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      tags:
+        - Tracks
+        - Album Art
 
   /tracks/search:
     get:
@@ -541,6 +617,23 @@ components:
           type: object
           description: Additional metadata tags as JSON object
           example: {"MUSICBRAINZ_TRACKID": "abc123", "REPLAYGAIN_TRACK_GAIN": "-3.2 dB"}
+        album_art_path:
+          type: string
+          nullable: true
+          description: File system path to the extracted album art image
+          example: "/music/Artists/The Beatles/Abbey Road/.album_art/cover.jpg"
+        album_art_mime_type:
+          type: string
+          nullable: true
+          description: MIME type of the album art image
+          enum: ["image/jpeg", "image/png", "image/webp"]
+          example: "image/jpeg"
+        album_art_size:
+          type: integer
+          format: int32
+          nullable: true
+          description: Size of the album art file in bytes
+          example: 102400
         created:
           type: string
           format: date-time
@@ -664,5 +757,9 @@ tags:
     description: Operations for browsing albums
   - name: Genres
     description: Operations for browsing genres
+  - name: Audio Streaming
+    description: Operations for streaming audio files
+  - name: Album Art
+    description: Operations for retrieving album artwork
   - name: Library Management
     description: Operations for managing the music library

@@ -30,6 +30,9 @@ pub struct Model {
     pub bit_depth: i32,
     pub channels: i32,
     pub tags: serde_json::Value,
+    pub album_art_path: Option<String>,
+    pub album_art_mime_type: Option<String>,
+    pub album_art_size: Option<i32>,
     pub created: chrono::DateTime<Utc>,
     pub modified: chrono::DateTime<Utc>,
 }

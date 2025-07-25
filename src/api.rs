@@ -61,6 +61,9 @@ pub struct TrackResponse {
     pub bit_depth: i32,
     pub channels: i32,
     pub tags: Value,
+    pub album_art_path: Option<String>,
+    pub album_art_mime_type: Option<String>,
+    pub album_art_size: Option<i32>,
     pub created: chrono::DateTime<chrono::Utc>,
     pub modified: chrono::DateTime<chrono::Utc>,
 }
@@ -90,6 +93,9 @@ impl From<track::Model> for TrackResponse {
             bit_depth: model.bit_depth,
             channels: model.channels,
             tags,
+            album_art_path: model.album_art_path,
+            album_art_mime_type: model.album_art_mime_type,
+            album_art_size: model.album_art_size,
             created: model.created,
             modified: model.modified,
         }
@@ -119,6 +125,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/tracks", get(get_tracks))
         .route("/tracks/:id", get(get_track_by_id))
         .route("/tracks/:id/play", get(play_track))
+        .route("/tracks/:id/albumart", get(get_album_art))
         .route("/tracks/search", get(search_tracks))
         .route("/stats", get(get_stats))
         .route("/artists", get(get_artists))
@@ -335,6 +342,63 @@ fn parse_range(range_str: &str, file_size: u64) -> Result<(u64, u64), StatusCode
     } else {
         Err(StatusCode::RANGE_NOT_SATISFIABLE)
     }
+}
+
+// GET /tracks/:id/albumart - Get album art for a specific track
+async fn get_album_art(
+    State(state): State<AppState>,
+    Path(id): Path<i32>,
+) -> Result<Response<Body>, StatusCode> {
+    // Find the track in the database
+    let track = Track::find_by_id(id)
+        .one(&state.db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let track = match track {
+        Some(track) => track,
+        None => return Err(StatusCode::NOT_FOUND),
+    };
+
+    // Check if the track has album art
+    let album_art_path = match track.album_art_path {
+        Some(path) => path,
+        None => return Err(StatusCode::NOT_FOUND),
+    };
+
+    // Get the file path
+    let file_path = PathBuf::from(&album_art_path);
+
+    // Check if file exists
+    if !file_path.exists() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    // Read the file
+    let file_content = tokio::fs::read(&file_path)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Determine MIME type
+    let mime_type = track.album_art_mime_type
+        .unwrap_or_else(|| {
+            mime_guess::from_path(&file_path)
+                .first_or_octet_stream()
+                .to_string()
+        });
+
+    // Build response
+    let response = Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, mime_type)
+        .header(header::CONTENT_LENGTH, file_content.len().to_string())
+        .header(header::CACHE_CONTROL, "public, max-age=86400") // Cache for 24 hours
+        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+        .header(header::ACCESS_CONTROL_ALLOW_METHODS, "GET, HEAD, OPTIONS")
+        .body(Body::from(file_content))
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(response)
 }
 
 // GET /tracks/search - Search tracks

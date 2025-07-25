@@ -474,6 +474,66 @@ pub async fn upsert_tracks(tracks: &Vec<track::ActiveModel>, db: &DatabaseConnec
         .await
 }
 
+// Extract and save album art from audio file
+async fn extract_album_art(
+    path: &Path,
+    tag: &lofty::tag::Tag,
+) -> (Option<String>, Option<String>, Option<i32>) {
+    // Look for album art in the tag
+    for picture in tag.pictures() {
+        let picture_data = picture.data();
+        if !picture_data.is_empty() {
+            // Create album art directory if it doesn't exist
+            let audio_dir = match path.parent() {
+                Some(dir) => dir,
+                None => continue,
+            };
+
+            let album_art_dir = audio_dir.join(".album_art");
+            if let Err(e) = tokio::fs::create_dir_all(&album_art_dir).await {
+                error!("Failed to create album art directory: {:?}", e);
+                continue;
+            }
+
+            // Generate filename based on picture type and format
+            let (extension, mime_type) = match picture.mime_type() {
+                Some(mime) => {
+                    let mime_str = mime.as_str();
+                    let ext = if mime_str.contains("jpeg") || mime_str.contains("jpg") {
+                        "jpg"
+                    } else if mime_str.contains("png") {
+                        "png"
+                    } else if mime_str.contains("webp") {
+                        "webp"
+                    } else {
+                        "jpg" // Default to jpg
+                    };
+                    (ext, Some(mime_str.to_string()))
+                }
+                None => ("jpg", None),
+            };
+
+            let filename = format!("cover.{}", extension);
+            let album_art_path = album_art_dir.join(&filename);
+
+            // Save the album art file
+            match tokio::fs::write(&album_art_path, picture_data).await {
+                Ok(_) => {
+                    let path_str = album_art_path.to_string_lossy().to_string();
+                    let size = picture_data.len() as i32;
+
+                    return (Some(path_str), mime_type, Some(size));
+                }
+                Err(e) => {
+                    error!("Failed to save album art to {:?}: {:?}", album_art_path, e);
+                }
+            }
+        }
+    }
+
+    (None, None, None)
+}
+
 async fn read_tags(path: &Path, metadata: &Metadata) -> Result<track::ActiveModel, TagError> {
     let created = chrono::DateTime::from(metadata.created().unwrap());
     let modified = chrono::DateTime::from(metadata.modified().unwrap());
@@ -553,6 +613,9 @@ async fn read_tags(path: &Path, metadata: &Metadata) -> Result<track::ActiveMode
                 })
         });
 
+    // Extract album art
+    let (album_art_path, album_art_mime_type, album_art_size) = extract_album_art(path, tag).await;
+
     Ok(track::ActiveModel {
         id: NotSet,
         path: Set(path.to_str().unwrap_or("").to_string()),
@@ -577,6 +640,9 @@ async fn read_tags(path: &Path, metadata: &Metadata) -> Result<track::ActiveMode
             error!("Failed to serialize tags to JSON: {:?}", e);
             serde_json::Value::Object(serde_json::Map::new())
         })),
+        album_art_path: Set(album_art_path),
+        album_art_mime_type: Set(album_art_mime_type),
+        album_art_size: Set(album_art_size),
         created: Set(created),
         modified: Set(modified),
     })
