@@ -35,36 +35,42 @@ async fn main() -> Result<(), DbErr> {
     let db: DatabaseConnection = Database::connect(opt).await?;
     Migrator::up(&db, None).await?;
 
-    // Clone database connection for API server
+    // Clone database connections for API server and scanner
     let api_db = db.clone();
+    let scan_db = db.clone();
     let bind_address = config.bind_address();
+    let music_path_str = config.music_path.clone();
 
-    // Start API server in background
+    // Start initial music library scan in background
+    let _scan_handle = tokio::spawn(async move {
+        info!("Starting initial music library scan...");
+        debug!("Path: {:?}", music_path_str);
+        debug!("Path exists: {}", Path::new(&music_path_str).exists());
+
+        let scan_config = scanner::ScanConfig {
+            music_path: music_path_str,
+            show_progress: true,
+            batch_size: 100,
+        };
+
+        match scanner::scan_music_library(&scan_db, scan_config).await {
+            Ok(result) => {
+                info!("Initial scan completed: {} files scanned, {} tracks processed",
+                      result.files_scanned, result.tracks_processed);
+            }
+            Err(e) => {
+                error!("Error during initial scan: {}", e);
+            }
+        }
+    });
+
+    // Start API server (this will run indefinitely)
     let api_handle = tokio::spawn(async move {
         start_api_server(api_db, bind_address).await;
     });
 
-    info!("Starting music library scan...");
-    let music_path_str = config.music_path.clone();
-
-    debug!("Path: {:?}", music_path_str);
-    debug!("Path exists: {}", Path::new(&music_path_str).exists());
-
-    let scan_config = scanner::ScanConfig {
-        music_path: music_path_str,
-        show_progress: true,
-        batch_size: 100,
-    };
-
-    let _scan_result = match scanner::scan_music_library(&db, scan_config).await {
-        Ok(result) => result,
-        Err(e) => {
-            error!("Error during scan: {}", e);
-            return Err(DbErr::Custom("Scan failed".to_string()));
-        }
-    };
-
     // Wait for API server (it runs indefinitely)
+    // The scan runs in the background and doesn't block the API
     api_handle.await.unwrap();
 
     Ok(())
