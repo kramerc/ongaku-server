@@ -3,11 +3,10 @@ use std::time::Duration;
 
 use axum::Router;
 use log::{debug, info, error};
-use sea_orm::{ConnectOptions, Database, DatabaseConnection, DbErr, EntityTrait, PaginatorTrait};
+use sea_orm::{ConnectOptions, Database, DatabaseConnection, DbErr};
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
 
-use entity::prelude::Track;
 use migration::{Migrator, MigratorTrait};
 
 mod logger;
@@ -57,17 +56,13 @@ async fn main() -> Result<(), DbErr> {
         batch_size: 100,
     };
 
-    let scan_result = match scanner::scan_music_library(&db, scan_config).await {
+    let _scan_result = match scanner::scan_music_library(&db, scan_config).await {
         Ok(result) => result,
         Err(e) => {
             error!("Error during scan: {}", e);
             return Err(DbErr::Custom("Scan failed".to_string()));
         }
     };
-
-    debug!("{} tracks are in the database", Track::find().count(&db).await?);
-    info!("Scan completed: {} files scanned, {} tracks processed",
-          scan_result.files_scanned, scan_result.tracks_processed);
 
     // Wait for API server (it runs indefinitely)
     api_handle.await.unwrap();

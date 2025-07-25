@@ -93,10 +93,20 @@ pub async fn scan_music_library(
 
     scan_handle.await.unwrap();
 
-    Ok(ScanResult {
+    let scan_result = ScanResult {
         files_scanned: total_files,
         tracks_processed,
-    })
+    };
+
+    // Log completion with database count
+    use entity::prelude::Track;
+    use sea_orm::{EntityTrait, PaginatorTrait};
+    let total_tracks_in_db = Track::find().count(db).await.unwrap_or(0);
+
+    info!("Scan completed: {} files scanned, {} tracks processed, {} tracks in database",
+          scan_result.files_scanned, scan_result.tracks_processed, total_tracks_in_db);
+
+    Ok(scan_result)
 }
 
 pub async fn get_all_modified_by_path(db: &DatabaseConnection) -> Result<HashMap<String, chrono::DateTime<chrono::Utc>>, sea_orm::DbErr> {
