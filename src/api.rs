@@ -63,8 +63,7 @@ pub struct TrackResponse {
 
 impl From<track::Model> for TrackResponse {
     fn from(model: track::Model) -> Self {
-        let tags = serde_json::from_str(&model.tags)
-            .unwrap_or_else(|_| Value::Object(serde_json::Map::new()));
+        let tags = model.tags;
 
         Self {
             id: model.id,

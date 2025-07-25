@@ -3,6 +3,7 @@
 use chrono::Utc;
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
+use serde_json;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "track")]
@@ -28,7 +29,7 @@ pub struct Model {
     pub sample_rate: i32,
     pub bit_depth: i32,
     pub channels: i32,
-    pub tags: String,
+    pub tags: serde_json::Value,
     pub created: chrono::DateTime<Utc>,
     pub modified: chrono::DateTime<Utc>,
 }

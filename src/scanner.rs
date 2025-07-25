@@ -306,7 +306,7 @@ async fn read_tags(path: &Path, metadata: &Metadata) -> Result<track::ActiveMode
         sample_rate: Set(properties.sample_rate().unwrap_or(0) as i32),
         bit_depth: Set(properties.bit_depth().unwrap_or(0) as i32),
         channels: Set(properties.channels().unwrap_or(0) as i32),
-        tags: Set(serde_json::to_string(&all_tags).unwrap()),
+        tags: Set(serde_json::to_value(all_tags).unwrap()),
         created: Set(created),
         modified: Set(modified),
     })
