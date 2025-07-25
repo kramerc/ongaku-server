@@ -264,7 +264,11 @@ pub async fn scan_dir(path: &Path, tx: &tokio::sync::mpsc::Sender<track::ActiveM
                 Some(modified) => modified.clone(),
                 None => chrono::DateTime::from(std::time::SystemTime::UNIX_EPOCH)
             };
-            if modified > modified_last_scan {
+
+            // Only process if file has been modified since last scan
+            // Use duration comparison to handle potential timestamp precision differences
+            let time_diff = modified.signed_duration_since(modified_last_scan);
+            if time_diff > chrono::Duration::seconds(1) {
                 // File has been modified since last scan
                 let tx = tx.clone();
                 tokio::spawn(async move {
@@ -288,6 +292,9 @@ pub async fn scan_dir(path: &Path, tx: &tokio::sync::mpsc::Sender<track::ActiveM
                         }
                     }
                 });
+            } else {
+                // File hasn't been modified since last scan, skip processing
+                log::debug!("Skipping unchanged file: {}", path_str);
             }
             // Progress will be updated after database upsert, not here
         }
@@ -354,7 +361,10 @@ pub async fn scan_dir_optimized(
                 .cloned()
                 .unwrap_or_else(|| chrono::DateTime::from(std::time::SystemTime::UNIX_EPOCH));
 
-            if modified > modified_last_scan {
+            // Only process if file has been modified since last scan
+            // Use duration comparison to handle potential timestamp precision differences
+            let time_diff = modified.signed_duration_since(modified_last_scan);
+            if time_diff > chrono::Duration::seconds(1) {
                 // File has been modified since last scan - spawn async task for processing
                 let tx = tx.clone();
                 let file_path = file_path.clone();
@@ -385,6 +395,9 @@ pub async fn scan_dir_optimized(
                     }
                     // Permit is automatically released when _permit is dropped
                 });
+            } else {
+                // File hasn't been modified since last scan, skip processing
+                log::debug!("Skipping unchanged file: {}", path_str);
             }
         }
     }
