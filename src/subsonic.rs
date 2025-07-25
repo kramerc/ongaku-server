@@ -421,11 +421,11 @@ pub async fn server_info() -> Response {
 async fn ping(Query(query): Query<PingQuery>) -> Response {
     debug!("Ping request from client: {}", query.auth.c);
 
-    // Return simple subsonic-response format like server_info
+    // Return minimal subsonic-response format as per API specification
     let xml_content = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
-<subsonic-response status="ok" version="{}"></subsonic-response>"#,
-        SUBSONIC_API_VERSION
+<subsonic-response status="ok" version="{}"> </subsonic-response>"#,
+        query.auth.v  // Use the version from the client request
     );
 
     axum::response::Response::builder()
@@ -451,21 +451,35 @@ async fn get_license(Query(query): Query<GetLicenseQuery>) -> Response {
 }
 
 async fn get_music_folders(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Query(query): Query<GetMusicFoldersQuery>,
 ) -> Response {
     debug!("GetMusicFolders request from client: {}", query.auth.c);
 
-    let folders = MusicFolders {
-        music_folders: MusicFolderList {
-            music_folder: vec![MusicFolder {
-                id: "1".to_string(),
-                name: "Music".to_string(),
-            }],
-        },
-    };
+    // Get the music folder name from the music path
+    let music_path = std::path::Path::new(&state.music_path);
+    let folder_name = music_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Music")
+        .to_string();
 
-    create_success_response(folders)
+    // Create the XML response manually to match the expected Subsonic format
+    let xml_content = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<subsonic-response status="ok" version="{}">
+<musicFolders>
+<musicFolder id="1" name="{}"/>
+</musicFolders>
+</subsonic-response>"#,
+        SUBSONIC_API_VERSION, folder_name
+    );
+
+    axum::response::Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "application/xml; charset=utf-8")
+        .body(xml_content.into())
+        .unwrap()
 }
 
 async fn get_indexes(
@@ -474,26 +488,37 @@ async fn get_indexes(
 ) -> Response {
     debug!("GetIndexes request from client: {}", query.auth.c);
 
-    // Get all unique artists from database
+    // Get all unique artists from database using a custom query
     let artists = match Track::find()
         .select_only()
         .column(track::Column::Artist)
         .distinct()
+        .into_tuple::<String>()
         .all(&state.db)
         .await
     {
         Ok(artists) => artists,
         Err(e) => {
             error!("Failed to fetch artists: {}", e);
-            return create_error_response::<Indexes>(0, "Failed to fetch artists");
+            // Return error in correct format
+            let xml_content = format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<subsonic-response status="failed" version="{}">
+</subsonic-response>"#,
+                SUBSONIC_API_VERSION
+            );
+            return axum::response::Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", "application/xml; charset=utf-8")
+                .body(xml_content.into())
+                .unwrap();
         }
     };
 
     // Group artists by first letter
-    let mut indexes_map: HashMap<char, Vec<Artist>> = HashMap::new();
+    let mut indexes_map: HashMap<char, Vec<String>> = HashMap::new();
 
-    for artist_model in artists {
-        let artist_name = artist_model.artist;
+    for artist_name in artists {
         if artist_name.is_empty() {
             continue;
         }
@@ -501,38 +526,52 @@ async fn get_indexes(
         let first_char = artist_name.chars().next().unwrap_or('#').to_ascii_uppercase();
         let index_char = if first_char.is_ascii_alphabetic() { first_char } else { '#' };
 
-        let artist = Artist {
-            id: format!("artist-{}", urlencoding::encode(&artist_name)),
-            name: artist_name,
-            starred: None,
-        };
-
-        indexes_map.entry(index_char).or_insert_with(Vec::new).push(artist);
+        indexes_map.entry(index_char).or_insert_with(Vec::new).push(artist_name);
     }
 
-    // Convert to Index structs and sort
-    let mut indexes: Vec<Index> = indexes_map
-        .into_iter()
-        .map(|(name, mut artists)| {
-            artists.sort_by(|a, b| a.name.cmp(&b.name));
-            Index {
-                name: name.to_string(),
-                artist: artists,
+    // Build XML manually to match the expected format
+    let mut xml_content = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<subsonic-response status="ok" version="{}">
+<indexes lastModified="{}" ignoredArticles="The El La Los Las Le Les">"#,
+        SUBSONIC_API_VERSION,
+        Utc::now().timestamp_millis()
+    );
+
+    // Sort index keys
+    let mut sorted_keys: Vec<char> = indexes_map.keys().cloned().collect();
+    sorted_keys.sort();
+
+    for index_char in sorted_keys {
+        if let Some(mut artists) = indexes_map.remove(&index_char) {
+            artists.sort();
+            xml_content.push_str(&format!(r#"
+<index name="{}">"#, index_char));
+
+            for artist_name in artists {
+                let artist_id = format!("artist-{}", urlencoding::encode(&artist_name));
+                xml_content.push_str(&format!(
+                    r#"
+<artist id="{}" name="{}"/>"#,
+                    artist_id,
+                    artist_name.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+                ));
             }
-        })
-        .collect();
 
-    indexes.sort_by(|a, b| a.name.cmp(&b.name));
+            xml_content.push_str(r#"
+</index>"#);
+        }
+    }
 
-    let result = Indexes {
-        indexes: IndexesList {
-            last_modified: Utc::now().timestamp_millis(),
-            ignored_articles: "The El La Los Las Le Les".to_string(),
-            index: indexes,
-        },
-    };
+    xml_content.push_str(r#"
+</indexes>
+</subsonic-response>"#);
 
-    create_success_response(result)
+    axum::response::Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "application/xml; charset=utf-8")
+        .body(xml_content.into())
+        .unwrap()
 }
 
 async fn get_music_directory(
@@ -551,62 +590,77 @@ async fn get_music_directory(
             .select_only()
             .column(track::Column::Album)
             .distinct()
+            .into_tuple::<String>()
             .all(&state.db)
             .await
         {
             Ok(albums) => albums,
             Err(e) => {
                 error!("Failed to fetch albums for artist: {}", e);
-                return create_error_response::<Directory>(0, "Failed to fetch albums");
+                let xml_content = format!(
+                    r#"<?xml version="1.0" encoding="UTF-8"?>
+<subsonic-response status="failed" version="{}">
+</subsonic-response>"#,
+                    SUBSONIC_API_VERSION
+                );
+                return axum::response::Response::builder()
+                    .status(StatusCode::OK)
+                    .header("Content-Type", "application/xml; charset=utf-8")
+                    .body(xml_content.into())
+                    .unwrap();
             }
         };
 
-        let children: Vec<Child> = albums
-            .into_iter()
-            .map(|album_model| Child {
-                id: format!("album-{}-{}",
-                    urlencoding::encode(&artist_name),
-                    urlencoding::encode(&album_model.album)
-                ),
-                parent: Some(query.id.clone()),
-                is_dir: true,
-                title: album_model.album.clone(),
-                album: Some(album_model.album),
-                artist: Some(artist_name.to_string()),
-                track: None,
-                year: None,
-                genre: None,
-                cover_art: None,
-                size: None,
-                content_type: None,
-                suffix: None,
-                duration: None,
-                bit_rate: None,
-                path: None,
-                album_id: None,
-                artist_id: Some(query.id.clone()),
-                type_: None,
-                starred: None,
-            })
-            .collect();
+        // Build XML manually to match the expected format
+        let mut xml_content = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<subsonic-response status="ok" version="{}">
+<directory id="{}" name="{}">"#,
+            SUBSONIC_API_VERSION,
+            query.id.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;"),
+            artist_name.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+        );
 
-        let directory = Directory {
-            directory: DirectoryInfo {
-                id: query.id.clone(),
-                parent: None,
-                name: artist_name.to_string(),
-                starred: None,
-                children,
-            },
-        };
+        for album_name in albums {
+            let album_id = format!("album-{}-{}",
+                urlencoding::encode(&artist_name),
+                urlencoding::encode(&album_name)
+            );
+            xml_content.push_str(&format!(
+                r#"
+<child id="{}" parent="{}" title="{}" artist="{}" isDir="true"/>"#,
+                album_id,
+                query.id.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;"),
+                album_name.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;"),
+                artist_name.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+            ));
+        }
 
-        create_success_response(directory)
+        xml_content.push_str(r#"
+</directory>
+</subsonic-response>"#);
+
+        axum::response::Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/xml; charset=utf-8")
+            .body(xml_content.into())
+            .unwrap()
 
     } else if query.id.starts_with("album-") {
         // Return tracks for this album
         let parts: Vec<&str> = query.id[6..].split('-').collect();
         if parts.len() < 2 {
-            return create_error_response::<Directory>(70, "Invalid album ID");
+            let xml_content = format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<subsonic-response status="failed" version="{}">
+</subsonic-response>"#,
+                SUBSONIC_API_VERSION
+            );
+            return axum::response::Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", "application/xml; charset=utf-8")
+                .body(xml_content.into())
+                .unwrap();
         }
 
         let artist_name = urlencoding::decode(parts[0]).unwrap_or_default();
@@ -625,29 +679,74 @@ async fn get_music_directory(
             Ok(tracks) => tracks,
             Err(e) => {
                 error!("Failed to fetch tracks for album: {}", e);
-                return create_error_response::<Directory>(0, "Failed to fetch tracks");
+                let xml_content = format!(
+                    r#"<?xml version="1.0" encoding="UTF-8"?>
+<subsonic-response status="failed" version="{}">
+</subsonic-response>"#,
+                    SUBSONIC_API_VERSION
+                );
+                return axum::response::Response::builder()
+                    .status(StatusCode::OK)
+                    .header("Content-Type", "application/xml; charset=utf-8")
+                    .body(xml_content.into())
+                    .unwrap();
             }
         };
 
-        let children: Vec<Child> = tracks
-            .into_iter()
-            .map(|track| track_to_child(&track, &query.id))
-            .collect();
+        // Build XML manually to match the expected format
+        let parent_id = format!("artist-{}", urlencoding::encode(&artist_name));
+        let mut xml_content = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<subsonic-response status="ok" version="{}">
+<directory id="{}" parent="{}" name="{}">"#,
+            SUBSONIC_API_VERSION,
+            query.id.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;"),
+            parent_id.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;"),
+            album_name.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+        );
 
-        let directory = Directory {
-            directory: DirectoryInfo {
-                id: query.id.clone(),
-                parent: Some(format!("artist-{}", urlencoding::encode(&artist_name))),
-                name: album_name.to_string(),
-                starred: None,
-                children,
-            },
-        };
+        for track in tracks {
+            xml_content.push_str(&format!(
+                r#"
+<child id="{}" parent="{}" title="{}" isDir="false" album="{}" artist="{}" track="{}" year="{}" genre="{}" contentType="audio/{}" suffix="{}" duration="{}" bitRate="{}" path="{}"/>"#,
+                track.id,
+                query.id.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;"),
+                track.title.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;"),
+                track.album.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;"),
+                track.artist.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;"),
+                track.track_number.unwrap_or(0),
+                track.year.unwrap_or(0),
+                if track.genre.is_empty() { "Unknown" } else { &track.genre }.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;"),
+                track.extension,
+                track.extension,
+                track.duration_seconds,
+                track.audio_bitrate,
+                track.path.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+            ));
+        }
 
-        create_success_response(directory)
+        xml_content.push_str(r#"
+</directory>
+</subsonic-response>"#);
+
+        axum::response::Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/xml; charset=utf-8")
+            .body(xml_content.into())
+            .unwrap()
 
     } else {
-        create_error_response::<Directory>(70, "Invalid directory ID")
+        let xml_content = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<subsonic-response status="failed" version="{}">
+</subsonic-response>"#,
+            SUBSONIC_API_VERSION
+        );
+        axum::response::Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/xml; charset=utf-8")
+            .body(xml_content.into())
+            .unwrap()
     }
 }
 
@@ -661,16 +760,17 @@ async fn get_genres(
         .select_only()
         .column(track::Column::Genre)
         .distinct()
+        .into_tuple::<String>()
         .all(&state.db)
         .await;
 
     let genres = match genres_result {
-        Ok(genre_models) => {
-            let mut genres: Vec<Genre> = genre_models
+        Ok(genre_names) => {
+            let mut genres: Vec<Genre> = genre_names
                 .into_iter()
-                .filter(|g| !g.genre.is_empty())
+                .filter(|g| !g.is_empty())
                 .map(|g| Genre {
-                    value: g.genre.clone(),
+                    value: g.clone(),
                     song_count: 0, // We'd need a separate query to get counts
                     album_count: 0,
                 })
@@ -717,15 +817,16 @@ async fn search3(
         .distinct()
         .limit(query.artist_count.unwrap_or(20))
         .offset(query.artist_offset.unwrap_or(0))
+        .into_tuple::<String>()
         .all(&state.db)
         .await
         .unwrap_or_default();
 
     let artist_results: Vec<Artist> = artists
         .into_iter()
-        .map(|artist| Artist {
-            id: format!("artist-{}", urlencoding::encode(&artist.artist)),
-            name: artist.artist,
+        .map(|artist_name| Artist {
+            id: format!("artist-{}", urlencoding::encode(&artist_name)),
+            name: artist_name,
             starred: None,
         })
         .collect();
@@ -738,25 +839,26 @@ async fn search3(
         .distinct()
         .limit(query.album_count.unwrap_or(20))
         .offset(query.album_offset.unwrap_or(0))
+        .into_tuple::<(String, String, Option<i32>)>()
         .all(&state.db)
         .await
         .unwrap_or_default();
 
     let album_results: Vec<Album> = albums
         .into_iter()
-        .map(|album| Album {
+        .map(|(artist, album, year)| Album {
             id: format!("album-{}-{}",
-                urlencoding::encode(&album.artist),
-                urlencoding::encode(&album.album)
+                urlencoding::encode(&artist),
+                urlencoding::encode(&album)
             ),
-            name: album.album,
-            artist: Some(album.artist.clone()),
-            artist_id: Some(format!("artist-{}", urlencoding::encode(&album.artist))),
+            name: album,
+            artist: Some(artist.clone()),
+            artist_id: Some(format!("artist-{}", urlencoding::encode(&artist))),
             cover_art: None,
             song_count: 0,
             duration: 0,
             created: Utc::now(),
-            year: album.year,
+            year,
             genre: None,
         })
         .collect();
