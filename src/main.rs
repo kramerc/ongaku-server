@@ -13,6 +13,13 @@ mod logger;
 mod api;
 mod config;
 mod scanner;
+mod subsonic;
+
+#[derive(Clone)]
+pub struct AppState {
+    pub db: DatabaseConnection,
+    pub music_path: String,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), DbErr> {
@@ -78,13 +85,14 @@ async fn main() -> Result<(), DbErr> {
 
 async fn start_api_server(db: DatabaseConnection, bind_address: String) {
     let config = config::Config::from_env();
-    let state = api::AppState {
+    let state = AppState {
         db,
         music_path: config.music_path,
     };
 
     let app = Router::new()
-        .nest("/api/v1", api::create_router(state))
+        .nest("/api/v1", api::create_router(state.clone()))
+        .nest("/rest", subsonic::create_router(state))
         .layer(CorsLayer::permissive());
 
     let listener = TcpListener::bind(&bind_address).await.unwrap();
@@ -98,6 +106,16 @@ async fn start_api_server(db: DatabaseConnection, bind_address: String) {
     info!("  GET /api/v1/albums - Get list of albums");
     info!("  GET /api/v1/genres - Get list of genres");
     info!("  POST /api/v1/rescan - Trigger music library rescan");
+    info!("");
+    info!("🎵 Subsonic API endpoints available at:");
+    info!("  GET /rest/ping - Test connectivity");
+    info!("  GET /rest/getMusicFolders - Get music folders");
+    info!("  GET /rest/getIndexes - Get artist index");
+    info!("  GET /rest/getArtists - Get all artists");
+    info!("  GET /rest/getArtist?id=... - Get artist details");
+    info!("  GET /rest/getAlbum?id=... - Get album details");
+    info!("  GET /rest/search3?query=... - Search tracks");
+    info!("  GET /rest/stream/:id - Stream audio file");
     info!("");
     info!("📖 API Documentation available at:");
     info!("  http://{}/api/v1/docs - Interactive Swagger UI", bind_address);

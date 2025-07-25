@@ -6,9 +6,11 @@ A music library server built with Rust, using Axum for the HTTP API and PostgreS
 
 - Music library scanning and indexing
 - RESTful API for accessing track metadata
+- **Subsonic API compatibility** for existing music clients
 - Search functionality across tracks, artists, albums, and genres
 - PostgreSQL database for reliable data storage
 - Automatic music library rescanning
+- Audio file streaming
 
 ## Prerequisites
 
@@ -95,6 +97,9 @@ The server will:
 4. Start the HTTP API server
 
 ## API Endpoints
+## API Endpoints
+
+### REST API
 
 - `GET /api/v1/tracks` - List tracks with pagination and filters
 - `GET /api/v1/tracks/:id` - Get a specific track by ID
@@ -104,6 +109,32 @@ The server will:
 - `GET /api/v1/albums` - Get list of unique albums
 - `GET /api/v1/genres` - Get list of unique genres
 - `POST /api/v1/rescan` - Trigger a music library rescan
+
+### Subsonic API
+
+Ongaku Server implements a Subsonic-compatible API under the `/rest` path, making it compatible with existing Subsonic music clients:
+
+- `GET /rest/ping` - Test connectivity
+- `GET /rest/getMusicFolders` - Get music folders
+- `GET /rest/getIndexes` - Get artist index
+- `GET /rest/getArtists` - Get all artists (ID3)
+- `GET /rest/getArtist` - Get artist details
+- `GET /rest/getAlbum` - Get album details
+- `GET /rest/getSong` - Get song details
+- `GET /rest/search3` - Search for artists, albums, and songs
+- `GET /rest/stream/:id` - Stream audio files
+
+**Compatible Clients:**
+- **Desktop**: Sublime Music, Supersonic, Sonixd
+- **Mobile**: DSub, Ultrasonic, Audinaut, Subtracks
+- **Web**: Jamstash, Supysonic Web UI
+
+For detailed Subsonic API documentation, see [SUBSONIC_API.md](SUBSONIC_API.md).
+
+**Authentication:** Use any non-empty username/password for demo purposes. Example:
+```bash
+curl "http://localhost:4000/rest/ping?u=admin&p=admin&v=1.16.1&c=test&f=json"
+```
 
 ## Migration from SQLite
 

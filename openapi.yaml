@@ -12,6 +12,11 @@ info:
     - Managing music library rescans
 
     The server automatically scans a configured music directory and extracts metadata from audio files.
+
+    ## Additional APIs
+
+    **Subsonic API**: This server also implements a Subsonic-compatible API under the `/rest` path.
+    See SUBSONIC_API.md for detailed documentation on Subsonic endpoints.
   version: 1.0.0
   contact:
     name: Ongaku Music Server

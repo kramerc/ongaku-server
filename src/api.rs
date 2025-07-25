@@ -7,7 +7,7 @@ use axum::{
 };
 use log::error;
 use sea_orm::{
-    ColumnTrait, Condition, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    ColumnTrait, Condition, EntityTrait, PaginatorTrait, QueryFilter,
     QueryOrder, QuerySelect,
 };
 use serde::{Deserialize, Serialize};
@@ -17,12 +17,7 @@ use tower_http::services::ServeFile;
 
 use entity::prelude::Track;
 use entity::track;
-
-#[derive(Clone)]
-pub struct AppState {
-    pub db: DatabaseConnection,
-    pub music_path: String,
-}
+use crate::AppState;
 
 #[derive(Deserialize)]
 pub struct TrackQuery {
