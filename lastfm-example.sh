@@ -17,6 +17,8 @@ if [ -z "$LASTFM_API_KEY" ] || [ -z "$LASTFM_SHARED_SECRET" ]; then
 fi
 
 echo "📡 Step 1: Getting Last.fm authentication URL..."
+# You can optionally add a callback URL parameter:
+# auth_response=$(curl -s "$BASE_URL/lastfm/auth?callback_url=https://yourapp.com/callback")
 auth_response=$(curl -s "$BASE_URL/lastfm/auth")
 auth_url=$(echo "$auth_response" | grep -o '"auth_url":"[^"]*"' | cut -d'"' -f4)
 token=$(echo "$auth_response" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)

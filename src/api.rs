@@ -135,6 +135,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/rescan", post(rescan_library))
         // Last.fm integration routes
         .route("/lastfm/auth", get(lastfm::get_auth_url))
+        .route("/lastfm/callback", get(lastfm::auth_callback))
         .route("/lastfm/session", post(lastfm::create_session))
         .route("/tracks/:id/scrobble", post(lastfm::scrobble_track))
         .route("/tracks/:id/now-playing", post(lastfm::update_now_playing))

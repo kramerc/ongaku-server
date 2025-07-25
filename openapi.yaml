@@ -511,7 +511,8 @@ paths:
       summary: Get Last.fm authentication URL
       description: |
         Get the Last.fm authentication URL that users need to visit to authorize
-        the application to scrobble tracks on their behalf.
+        the application to scrobble tracks on their behalf. The callback URL is
+        pre-configured in the Last.fm application settings.
       responses:
         '200':
           description: Authentication URL generated successfully
@@ -528,12 +529,69 @@ paths:
       tags:
         - Last.fm Integration
 
+  /lastfm/callback:
+    get:
+      summary: Last.fm authorization callback
+      description: |
+        Callback endpoint that Last.fm redirects to after user authorization.
+        This endpoint automatically exchanges the authorization token for a session key
+        and returns HTML with the session information for the user.
+      parameters:
+        - name: token
+          in: query
+          description: Authorization token from Last.fm
+          required: true
+          schema:
+            type: string
+            example: "abcd1234efgh5678"
+      responses:
+        '200':
+          description: Authorization successful - returns HTML page with session info
+          content:
+            text/html:
+              schema:
+                type: string
+                example: |
+                  <!DOCTYPE html>
+                  <html>
+                  <head><title>Last.fm Authorization Complete</title></head>
+                  <body>
+                    <h1>Authorization Successful!</h1>
+                    <p>Session Key: xyz789abc123def456</p>
+                    <p>Username: music_lover_2024</p>
+                  </body>
+                  </html>
+        '400':
+          description: Invalid or missing token
+          content:
+            text/html:
+              schema:
+                type: string
+                example: |
+                  <!DOCTYPE html>
+                  <html>
+                  <head><title>Authorization Failed</title></head>
+                  <body>
+                    <h1>Authorization Failed</h1>
+                    <p>Invalid or missing token</p>
+                  </body>
+                  </html>
+        '500':
+          description: Internal server error
+          content:
+            text/html:
+              schema:
+                type: string
+      tags:
+        - Last.fm Integration
+
   /lastfm/session:
     post:
       summary: Create Last.fm session
       description: |
         Exchange the authorization token from Last.fm for a session key
-        that can be used for scrobbling tracks.
+        that can be used for scrobbling tracks. This is an alternative to the
+        callback endpoint for programmatic access.
       requestBody:
         required: true
         content:
@@ -922,7 +980,7 @@ components:
         auth_url:
           type: string
           description: URL that users need to visit to authorize the application
-          example: "https://www.last.fm/api/auth/?api_key=YOUR_API_KEY&token=TOKEN"
+          example: "https://www.last.fm/api/auth?api_key=YOUR_API_KEY&token=TOKEN"
         token:
           type: string
           description: Authorization token that will be used to create a session
