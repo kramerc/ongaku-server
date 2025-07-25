@@ -38,7 +38,7 @@ async fn main() -> Result<(), DbErr> {
     let db: DatabaseConnection = Database::connect(opt).await?;
     Migrator::up(&db, None).await?;
 
-    let path = Path::new("E:\\Music");
+    let path = Path::new("/mnt/shucked/Music");
 
     println!("Path: {:?}", path);
     println!("Path exists: {}", path.exists());
