@@ -101,7 +101,9 @@ async fn start_api_server(db: DatabaseConnection, bind_address: String) -> Resul
         }
     };
 
-    info!("API server starting on http://{}", bind_address);
+    const PUBLIC_ADDRESS: &str = "ongaku-dev.m3r.dev";
+
+    info!("API server starting on https://{}", PUBLIC_ADDRESS);
     info!("API endpoints available at:");
     info!("  GET /api/v1/tracks - List tracks with pagination");
     info!("  GET /api/v1/tracks/:id - Get track by ID");
@@ -114,8 +116,8 @@ async fn start_api_server(db: DatabaseConnection, bind_address: String) -> Resul
     info!("  POST /api/v1/rescan - Trigger music library rescan");
     info!("");
     info!("📖 API Documentation available at:");
-    info!("  http://{}/api/v1/docs - Interactive Swagger UI", bind_address);
-    info!("  http://{}/api/v1/openapi.yaml - OpenAPI 3.0 specification", bind_address);
+    info!("  https://{}/api/v1/docs - Interactive Swagger UI", PUBLIC_ADDRESS);
+    info!("  https://{}/api/v1/openapi.yaml - OpenAPI 3.0 specification", PUBLIC_ADDRESS);
 
     if let Err(e) = axum::serve(listener, app).await {
         error!("Server error: {}", e);

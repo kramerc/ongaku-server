@@ -106,7 +106,7 @@ The server will:
 - `GET /api/v1/genres` - Get list of unique genres
 - `POST /api/v1/rescan` - Trigger a music library rescan
 
-For detailed API documentation, visit `http://localhost:4000/api/v1/docs` when the server is running.
+For detailed API documentation, visit `https://ongaku-dev.m3r.dev/api/v1/docs` when the server is running.
 
 ## Migration from SQLite
 

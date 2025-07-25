@@ -17,7 +17,7 @@ Copy `.env.example` to `.env` and modify as needed.
 
 ### Base URL
 ```
-http://localhost:4000/api/v1
+https://ongaku-dev.m3r.dev/api/v1
 ```
 
 ### Endpoints
@@ -36,7 +36,7 @@ List tracks with pagination and optional filters.
 
 **Example:**
 ```bash
-curl "http://localhost:4000/api/v1/tracks?page=1&per_page=10&artist=Beatles"
+curl "https://ongaku-dev.m3r.dev/api/v1/tracks?page=1&per_page=10&artist=Beatles"
 ```
 
 #### GET /tracks/:id
@@ -44,7 +44,7 @@ Get a specific track by ID.
 
 **Example:**
 ```bash
-curl "http://localhost:4000/api/v1/tracks/123"
+curl "https://ongaku-dev.m3r.dev/api/v1/tracks/123"
 ```
 
 #### GET /tracks/:id/play
@@ -59,16 +59,16 @@ Stream audio file for the specified track. This endpoint supports HTTP range req
 **Example:**
 ```bash
 # Stream full file
-curl "http://localhost:4000/api/v1/tracks/123/play" -o song.mp3
+curl "https://ongaku-dev.m3r.dev/api/v1/tracks/123/play" -o song.mp3
 
 # Request specific byte range (browsers do this automatically)
-curl -H "Range: bytes=0-1023" "http://localhost:4000/api/v1/tracks/123/play"
+curl -H "Range: bytes=0-1023" "https://ongaku-dev.m3r.dev/api/v1/tracks/123/play"
 ```
 
 **HTML5 Audio Example:**
 ```html
 <audio controls>
-  <source src="http://localhost:4000/api/v1/tracks/123/play" type="audio/mpeg">
+  <source src="https://ongaku-dev.m3r.dev/api/v1/tracks/123/play" type="audio/mpeg">
   Your browser does not support the audio element.
 </audio>
 ```
@@ -97,7 +97,7 @@ Search tracks across multiple fields.
 
 **Example:**
 ```bash
-curl "http://localhost:4000/api/v1/tracks/search?q=rock&page=1"
+curl "https://ongaku-dev.m3r.dev/api/v1/tracks/search?q=rock&page=1"
 ```
 
 #### GET /stats
@@ -105,7 +105,7 @@ Get database statistics including total tracks, duration, and unique counts.
 
 **Example:**
 ```bash
-curl "http://localhost:4000/api/v1/stats"
+curl "https://ongaku-dev.m3r.dev/api/v1/stats"
 ```
 
 #### GET /artists
@@ -113,7 +113,7 @@ Get list of unique artists.
 
 **Example:**
 ```bash
-curl "http://localhost:4000/api/v1/artists"
+curl "https://ongaku-dev.m3r.dev/api/v1/artists"
 ```
 
 #### GET /albums
@@ -121,7 +121,7 @@ Get list of unique albums.
 
 **Example:**
 ```bash
-curl "http://localhost:4000/api/v1/albums"
+curl "https://ongaku-dev.m3r.dev/api/v1/albums"
 ```
 
 #### GET /genres
@@ -129,7 +129,7 @@ Get list of unique genres.
 
 **Example:**
 ```bash
-curl "http://localhost:4000/api/v1/genres"
+curl "https://ongaku-dev.m3r.dev/api/v1/genres"
 ```
 
 #### POST /rescan
@@ -137,7 +137,7 @@ Trigger a rescan of the music library. This will scan for new, modified, or dele
 
 **Example:**
 ```bash
-curl -X POST "http://localhost:4000/api/v1/rescan"
+curl -X POST "https://ongaku-dev.m3r.dev/api/v1/rescan"
 ```
 
 **Response:**
@@ -213,7 +213,7 @@ cargo run
 
 The server will:
 1. Start scanning your music library (configured path in main.rs)
-2. Start the REST API server on http://localhost:4000
+2. Start the REST API server on https://ongaku-dev.m3r.dev
 3. Both processes run concurrently
 
 ## CORS
