@@ -21,6 +21,7 @@ use tower_http::services::ServeFile;
 
 use entity::prelude::Track;
 use entity::track;
+use crate::lastfm;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -132,6 +133,11 @@ pub fn create_router(state: AppState) -> Router {
         .route("/albums", get(get_albums))
         .route("/genres", get(get_genres))
         .route("/rescan", post(rescan_library))
+        // Last.fm integration routes
+        .route("/lastfm/auth", get(lastfm::get_auth_url))
+        .route("/lastfm/session", post(lastfm::create_session))
+        .route("/tracks/:id/scrobble", post(lastfm::scrobble_track))
+        .route("/tracks/:id/now-playing", post(lastfm::update_now_playing))
         // Documentation routes
         .route_service("/docs", ServeFile::new("api-docs.html"))
         .route_service("/openapi.yaml", ServeFile::new("openapi.yaml"))

@@ -13,6 +13,7 @@ mod logger;
 mod api;
 mod config;
 mod scanner;
+mod lastfm;
 
 #[tokio::main]
 async fn main() -> Result<(), DbErr> {
@@ -114,6 +115,10 @@ async fn start_api_server(db: DatabaseConnection, bind_address: String) -> Resul
     info!("  GET /api/v1/albums - Get list of albums");
     info!("  GET /api/v1/genres - Get list of genres");
     info!("  POST /api/v1/rescan - Trigger music library rescan");
+    info!("  GET /api/v1/lastfm/auth - Get Last.fm authentication URL");
+    info!("  POST /api/v1/lastfm/session - Create Last.fm session");
+    info!("  POST /api/v1/tracks/:id/scrobble - Scrobble track to Last.fm");
+    info!("  POST /api/v1/tracks/:id/now-playing - Update Last.fm now playing");
     info!("");
     info!("📖 API Documentation available at:");
     info!("  https://{}/api/v1/docs - Interactive Swagger UI", PUBLIC_ADDRESS);

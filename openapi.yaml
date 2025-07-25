@@ -12,8 +12,16 @@ info:
     - Accessing album artwork images
     - Getting library statistics
     - Managing music library rescans
+    - Last.fm integration for scrobbling and authentication
 
     The server automatically scans a configured music directory and extracts metadata and album art from audio files.
+
+    Last.fm integration allows users to:
+    - Authenticate with their Last.fm accounts
+    - Scrobble tracks when played
+    - Update "now playing" status
+
+    To use Last.fm features, you'll need to set LASTFM_API_KEY and LASTFM_SHARED_SECRET environment variables.
   version: 1.0.0
   contact:
     name: Ongaku Music Server
@@ -498,6 +506,166 @@ paths:
       tags:
         - Library Management
 
+  /lastfm/auth:
+    get:
+      summary: Get Last.fm authentication URL
+      description: |
+        Get the Last.fm authentication URL that users need to visit to authorize
+        the application to scrobble tracks on their behalf.
+      responses:
+        '200':
+          description: Authentication URL generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LastfmAuthResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      tags:
+        - Last.fm Integration
+
+  /lastfm/session:
+    post:
+      summary: Create Last.fm session
+      description: |
+        Exchange the authorization token from Last.fm for a session key
+        that can be used for scrobbling tracks.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LastfmSessionRequest'
+      responses:
+        '200':
+          description: Session created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LastfmSessionResponse'
+        '400':
+          description: Invalid token or authorization failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      tags:
+        - Last.fm Integration
+
+  /tracks/{id}/scrobble:
+    post:
+      summary: Scrobble track to Last.fm
+      description: |
+        Scrobble a track to Last.fm when it has been played for at least
+        50% of its duration or for 4 minutes, whichever is less.
+      parameters:
+        - name: id
+          in: path
+          description: Track ID
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScrobbleRequest'
+      responses:
+        '200':
+          description: Track scrobbled successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScrobbleResponse'
+        '400':
+          description: Invalid request or scrobble conditions not met
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Last.fm session not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Track not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      tags:
+        - Tracks
+        - Last.fm Integration
+
+  /tracks/{id}/now-playing:
+    post:
+      summary: Update Last.fm now playing status
+      description: |
+        Update the "now playing" status on Last.fm for the specified track.
+        This should be called when a track starts playing.
+      parameters:
+        - name: id
+          in: path
+          description: Track ID
+          required: true
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NowPlayingRequest'
+      responses:
+        '200':
+          description: Now playing status updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NowPlayingResponse'
+        '401':
+          description: Last.fm session not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Track not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      tags:
+        - Tracks
+        - Last.fm Integration
+
 components:
   schemas:
     Track:
@@ -744,6 +912,122 @@ components:
           description: Error message
           example: "Track not found"
 
+    LastfmAuthResponse:
+      type: object
+      description: Last.fm authentication URL response
+      required:
+        - auth_url
+        - token
+      properties:
+        auth_url:
+          type: string
+          description: URL that users need to visit to authorize the application
+          example: "https://www.last.fm/api/auth/?api_key=YOUR_API_KEY&token=TOKEN"
+        token:
+          type: string
+          description: Authorization token that will be used to create a session
+          example: "abcd1234efgh5678"
+
+    LastfmSessionRequest:
+      type: object
+      description: Request to create Last.fm session
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          description: Authorization token received after user authorization
+          example: "abcd1234efgh5678"
+
+    LastfmSessionResponse:
+      type: object
+      description: Last.fm session creation response
+      required:
+        - session_key
+        - username
+        - message
+      properties:
+        session_key:
+          type: string
+          description: Session key for authenticated Last.fm requests
+          example: "xyz789abc123def456"
+        username:
+          type: string
+          description: Last.fm username
+          example: "music_lover_2024"
+        message:
+          type: string
+          description: Success message
+          example: "Last.fm session created successfully"
+
+    ScrobbleRequest:
+      type: object
+      description: Request to scrobble a track
+      required:
+        - session_key
+        - timestamp
+      properties:
+        session_key:
+          type: string
+          description: Last.fm session key for the authenticated user
+          example: "xyz789abc123def456"
+        timestamp:
+          type: integer
+          format: int64
+          description: Unix timestamp when the track started playing
+          example: 1640995200
+        album_artist:
+          type: string
+          description: Override album artist for scrobbling (optional)
+          example: "The Beatles"
+
+    NowPlayingRequest:
+      type: object
+      description: Request to update now playing status
+      required:
+        - session_key
+      properties:
+        session_key:
+          type: string
+          description: Last.fm session key for the authenticated user
+          example: "xyz789abc123def456"
+
+    ScrobbleResponse:
+      type: object
+      description: Response from scrobbling a track
+      required:
+        - success
+        - message
+      properties:
+        success:
+          type: boolean
+          description: Whether the scrobble was successful
+          example: true
+        message:
+          type: string
+          description: Result message
+          example: "Track scrobbled successfully"
+        scrobble_id:
+          type: string
+          description: Last.fm scrobble ID (if provided by Last.fm)
+          example: "12345"
+
+    NowPlayingResponse:
+      type: object
+      description: Response from updating now playing status
+      required:
+        - success
+        - message
+      properties:
+        success:
+          type: boolean
+          description: Whether the now playing update was successful
+          example: true
+        message:
+          type: string
+          description: Result message
+          example: "Now playing status updated successfully"
+
 tags:
   - name: Tracks
     description: Operations for managing and querying music tracks
@@ -763,3 +1047,5 @@ tags:
     description: Operations for retrieving album artwork
   - name: Library Management
     description: Operations for managing the music library
+  - name: Last.fm Integration
+    description: Operations for Last.fm scrobbling and authentication
