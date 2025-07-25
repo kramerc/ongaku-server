@@ -184,6 +184,9 @@ pub async fn upsert_tracks(tracks: &Vec<track::ActiveModel>, db: &DatabaseConnec
             track::Column::Title,
             track::Column::Artist,
             track::Column::Album,
+            track::Column::DiscNumber,
+            track::Column::TrackNumber,
+            track::Column::Year,
             track::Column::Genre,
             track::Column::AlbumArtist,
             track::Column::Publisher,
@@ -232,6 +235,57 @@ async fn read_tags(path: &Path, metadata: &Metadata) -> Result<track::ActiveMode
         all_tags.insert(key, value);
     }
 
+    // Extract disc number - try multiple approaches
+    let disc_number = tag.get_string(&ItemKey::DiscNumber)
+        .and_then(|s| s.parse::<i32>().ok())
+        .or_else(|| {
+            // Try to parse from DiscTotal format like "1/2"
+            tag.get_string(&ItemKey::DiscNumber)
+                .and_then(|s| s.split('/').next()?.parse::<i32>().ok())
+        })
+        .or_else(|| {
+            // Try alternative tag names from all_tags
+            all_tags.get("DISCNUMBER")
+                .or_else(|| all_tags.get("DISC"))
+                .or_else(|| all_tags.get("TPOS"))
+                .and_then(|s| s.split('/').next()?.parse::<i32>().ok())
+        });
+
+    // Extract track number - try multiple approaches
+    let track_number = tag.track()
+        .map(|t| t as i32)
+        .or_else(|| {
+            // Try to parse from TrackTotal format like "1/12"
+            tag.get_string(&ItemKey::TrackNumber)
+                .and_then(|s| s.split('/').next()?.parse::<i32>().ok())
+        })
+        .or_else(|| {
+            // Try alternative tag names from all_tags
+            all_tags.get("TRACKNUMBER")
+                .or_else(|| all_tags.get("TRACK"))
+                .or_else(|| all_tags.get("TRCK"))
+                .and_then(|s| s.split('/').next()?.parse::<i32>().ok())
+        });
+
+    // Extract year - try multiple approaches
+    let year = tag.year()
+        .map(|y| y as i32)
+        .or_else(|| {
+            // Try alternative tag names from all_tags
+            all_tags.get("DATE")
+                .or_else(|| all_tags.get("YEAR"))
+                .or_else(|| all_tags.get("TDRC"))
+                .or_else(|| all_tags.get("TYER"))
+                .and_then(|s| {
+                    // Parse year from various date formats
+                    if s.len() >= 4 {
+                        s[0..4].parse::<i32>().ok()
+                    } else {
+                        s.parse::<i32>().ok()
+                    }
+                })
+        });
+
     Ok(track::ActiveModel {
         id: NotSet,
         path: Set(path.to_str().unwrap_or("").to_string()),
@@ -239,6 +293,9 @@ async fn read_tags(path: &Path, metadata: &Metadata) -> Result<track::ActiveMode
         title: Set(tag.title().as_deref().unwrap_or("").to_string()),
         artist: Set(tag.artist().as_deref().unwrap_or("").to_string()),
         album: Set(tag.album().as_deref().unwrap_or("").to_string()),
+        disc_number: Set(disc_number),
+        track_number: Set(track_number),
+        year: Set(year),
         genre: Set(tag.genre().as_deref().unwrap_or("").to_string()),
         album_artist: Set(tag.get_string(&ItemKey::AlbumArtist).unwrap_or("").to_string()),
         publisher: Set(tag.get_string(&ItemKey::Publisher).unwrap_or("").to_string()),

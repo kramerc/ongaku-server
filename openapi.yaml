@@ -3,14 +3,14 @@ info:
   title: Ongaku Music Server API
   description: |
     A REST API for managing and querying a music library database.
-    
+
     This API provides endpoints for:
     - Browsing tracks with pagination and filtering
     - Searching across tracks, artists, albums, and genres
     - Retrieving individual track details
     - Getting library statistics
     - Managing music library rescans
-    
+
     The server automatically scans a configured music directory and extracts metadata from audio files.
   version: 1.0.0
   contact:
@@ -351,6 +351,24 @@ components:
           type: string
           description: Album name
           example: "Abbey Road"
+        disc_number:
+          type: integer
+          format: int32
+          nullable: true
+          description: Disc number for multi-disc albums
+          example: 1
+        track_number:
+          type: integer
+          format: int32
+          nullable: true
+          description: Track number on the album/disc
+          example: 1
+        year:
+          type: integer
+          format: int32
+          nullable: true
+          description: Release year of the track/album
+          example: 1969
         genre:
           type: string
           description: Music genre

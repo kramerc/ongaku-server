@@ -23,6 +23,9 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Track::Title).string().not_null())
                     .col(ColumnDef::new(Track::Artist).string().not_null())
                     .col(ColumnDef::new(Track::Album).string().not_null())
+                    .col(ColumnDef::new(Track::DiscNumber).integer())
+                    .col(ColumnDef::new(Track::TrackNumber).integer())
+                    .col(ColumnDef::new(Track::Year).integer())
                     .col(ColumnDef::new(Track::Genre).string().not_null())
                     .col(ColumnDef::new(Track::AlbumArtist).string().not_null())
                     .col(ColumnDef::new(Track::Publisher).string().not_null())
@@ -57,6 +60,9 @@ enum Track {
     Title,
     Artist,
     Album,
+    DiscNumber,
+    TrackNumber,
+    Year,
     Genre,
     AlbumArtist,
     Publisher,
