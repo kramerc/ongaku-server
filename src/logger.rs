@@ -1,4 +1,5 @@
 use log::{Level, LevelFilter, Metadata, Record};
+use std::env;
 
 static LOGGER: SimpleLogger = SimpleLogger;
 
@@ -6,7 +7,7 @@ struct SimpleLogger;
 
 impl log::Log for SimpleLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        metadata.level() <= Level::Info
+        metadata.level() <= get_log_level()
     }
 
     fn log(&self, record: &Record) {
@@ -18,7 +19,29 @@ impl log::Log for SimpleLogger {
     fn flush(&self) {}
 }
 
+fn get_log_level() -> Level {
+    match env::var("RUST_LOG").as_deref() {
+        Ok("trace") => Level::Trace,
+        Ok("debug") => Level::Debug,
+        Ok("info") => Level::Info,
+        Ok("warn") => Level::Warn,
+        Ok("error") => Level::Error,
+        _ => Level::Info, // default
+    }
+}
+
+fn get_log_level_filter() -> LevelFilter {
+    match env::var("RUST_LOG").as_deref() {
+        Ok("trace") => LevelFilter::Trace,
+        Ok("debug") => LevelFilter::Debug,
+        Ok("info") => LevelFilter::Info,
+        Ok("warn") => LevelFilter::Warn,
+        Ok("error") => LevelFilter::Error,
+        _ => LevelFilter::Info, // default
+    }
+}
+
 pub fn init() -> Result<(), log::SetLoggerError> {
     log::set_logger(&LOGGER)
-        .map(|()| log::set_max_level(LevelFilter::Debug))
+        .map(|()| log::set_max_level(get_log_level_filter()))
 }

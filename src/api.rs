@@ -5,6 +5,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use log::{info, error};
 use sea_orm::{
     ColumnTrait, Condition, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
     QueryOrder, QuerySelect,
@@ -359,11 +360,11 @@ async fn rescan_library(
 
         match crate::scanner::scan_music_library(&db, scan_config).await {
             Ok(result) => {
-                println!("Rescan completed: {} files scanned, {} tracks processed",
+                info!("Rescan completed: {} files scanned, {} tracks processed",
                         result.files_scanned, result.tracks_processed);
             }
             Err(e) => {
-                eprintln!("Error during rescan: {:?}", e);
+                error!("Error during rescan: {:?}", e);
             }
         }
     });

@@ -2,7 +2,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use axum::Router;
-use log::{info, error};
+use log::{debug, info, error};
 use sea_orm::{ConnectOptions, Database, DatabaseConnection, DbErr, EntityTrait, PaginatorTrait};
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
@@ -48,8 +48,8 @@ async fn main() -> Result<(), DbErr> {
     info!("Starting music library scan...");
     let music_path_str = config.music_path.clone();
 
-    println!("Path: {:?}", music_path_str);
-    println!("Path exists: {}", Path::new(&music_path_str).exists());
+    debug!("Path: {:?}", music_path_str);
+    debug!("Path exists: {}", Path::new(&music_path_str).exists());
 
     let scan_config = scanner::ScanConfig {
         music_path: music_path_str,
@@ -65,7 +65,7 @@ async fn main() -> Result<(), DbErr> {
         }
     };
 
-    println!("{} tracks are in the database", Track::find().count(&db).await?);
+    debug!("{} tracks are in the database", Track::find().count(&db).await?);
     info!("Scan completed: {} files scanned, {} tracks processed",
           scan_result.files_scanned, scan_result.tracks_processed);
 
