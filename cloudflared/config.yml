@@ -1,0 +1,7 @@
+tunnel: feffafc2-596b-442e-8c73-f69e3cb39feb
+credentials-file: /home/kramer/.cloudflared/feffafc2-596b-442e-8c73-f69e3cb39feb.json
+
+ingress:
+  - hostname: ongaku-dev.m3r.dev
+    service: http://localhost:4000
+  - service: http_status:404
