@@ -5,28 +5,38 @@ use std::path::Path;
 use std::time::Duration;
 
 use async_recursion::async_recursion;
+use axum::Router;
 use lofty::error::LoftyError;
 use lofty::prelude::*;
 use lofty::probe::Probe;
-use log::error;
+use log::{error, info};
 use ml_progress::progress_builder;
 use regex::Regex;
 use sea_orm::{ConnectOptions, Database, DatabaseConnection, DbErr, EntityTrait, InsertResult, NotSet, PaginatorTrait};
 use sea_orm::ActiveValue::Set;
+use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
+use tower_http::cors::CorsLayer;
 
 use entity::prelude::Track;
 use entity::track;
 use migration::{Migrator, MigratorTrait};
 
 mod logger;
+mod api;
+mod config;
 
 #[tokio::main]
 async fn main() -> Result<(), DbErr> {
+    // Load environment variables from .env file if it exists
+    dotenv::dotenv().ok();
+
     logger::init().unwrap();
 
-    let mut opt = ConnectOptions::new("sqlite://ongaku.db?mode=rwc");
+    let config = config::Config::from_env();
+
+    let mut opt = ConnectOptions::new(&config.database_url);
     opt.max_connections(100)
         .min_connections(5)
         .connect_timeout(Duration::from_secs(8))
@@ -38,13 +48,23 @@ async fn main() -> Result<(), DbErr> {
     let db: DatabaseConnection = Database::connect(opt).await?;
     Migrator::up(&db, None).await?;
 
-    let path = Path::new("/mnt/shucked/Music");
+    // Clone database connection for API server
+    let api_db = db.clone();
+    let bind_address = config.bind_address();
 
-    println!("Path: {:?}", path);
-    println!("Path exists: {}", path.exists());
+    // Start API server in background
+    let api_handle = tokio::spawn(async move {
+        start_api_server(api_db, bind_address).await;
+    });
+
+    info!("Starting music library scan...");
+    let music_path_str = config.music_path.clone();
+
+    println!("Path: {:?}", music_path_str);
+    println!("Path exists: {}", Path::new(&music_path_str).exists());
 
     let modified_by_path = get_all_modified_by_path(&db).await?;
-    let count = count_files(path);
+    let count = count_files(Path::new(&music_path_str));
     let progress = progress_builder!(
         "[" percent "] " pos_group "/" total_group " " bar_fill " (" eta_hms " @ " speed "it/s)"
     )
@@ -55,7 +75,7 @@ async fn main() -> Result<(), DbErr> {
     let (tx, mut rx) = mpsc::channel(100);
     let tx_clone = tx.clone();
     let scan_handle = tokio::spawn(async move {
-        scan_dir(path, &tx_clone, &modified_by_path, &progress).await;
+        scan_dir(Path::new(&music_path_str), &tx_clone, &modified_by_path, &progress).await;
         progress.finish();
     });
 
@@ -79,7 +99,32 @@ async fn main() -> Result<(), DbErr> {
     scan_handle.await.unwrap();
 
     println!("{} tracks are in the database", Track::find().count(&db).await?);
+
+    // Wait for API server (it runs indefinitely)
+    api_handle.await.unwrap();
+
     Ok(())
+}
+
+async fn start_api_server(db: DatabaseConnection, bind_address: String) {
+    let state = api::AppState { db };
+
+    let app = Router::new()
+        .nest("/api/v1", api::create_router(state))
+        .layer(CorsLayer::permissive());
+
+    let listener = TcpListener::bind(&bind_address).await.unwrap();
+    info!("API server starting on http://{}", bind_address);
+    info!("API endpoints available at:");
+    info!("  GET /api/v1/tracks - List tracks with pagination");
+    info!("  GET /api/v1/tracks/:id - Get track by ID");
+    info!("  GET /api/v1/tracks/search?q=query - Search tracks");
+    info!("  GET /api/v1/stats - Get database statistics");
+    info!("  GET /api/v1/artists - Get list of artists");
+    info!("  GET /api/v1/albums - Get list of albums");
+    info!("  GET /api/v1/genres - Get list of genres");
+
+    axum::serve(listener, app).await.unwrap();
 }
 
 async fn get_all_modified_by_path(db: &DatabaseConnection) -> Result<HashMap<String, chrono::DateTime<chrono::Utc>>, DbErr> {
