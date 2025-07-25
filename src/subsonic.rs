@@ -1039,7 +1039,7 @@ async fn stream(
     // by providing hints in the response
     let is_mobile_client = headers.get("user-agent")
         .and_then(|ua| ua.to_str().ok())
-        .map(|ua| ua.contains("iSub") || ua.contains("CFNetwork") || ua.contains("Mobile"))
+        .map(|ua| ua.contains("iSub") || ua.contains("Mobile"))
         .unwrap_or(false);
 
     debug!("Client info: mobile={}, user-agent={:?}",
