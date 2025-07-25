@@ -2,7 +2,7 @@
 
 # Example API calls for testing the Ongaku Server REST API
 
-BASE_URL="http://localhost:3000/api/v1"
+BASE_URL="http://localhost:4000/api/v1"
 
 echo "=== Testing Ongaku Server REST API ==="
 echo

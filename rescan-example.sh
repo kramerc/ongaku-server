@@ -2,7 +2,7 @@
 
 # Example of triggering a music library rescan via the API
 
-BASE_URL="http://localhost:3000/api/v1"
+BASE_URL="http://localhost:4000/api/v1"
 
 echo "=== Triggering Music Library Rescan ==="
 echo

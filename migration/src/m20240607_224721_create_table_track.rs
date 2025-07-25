@@ -37,8 +37,8 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Track::BitDepth).integer().not_null())
                     .col(ColumnDef::new(Track::Channels).integer().not_null())
                     .col(ColumnDef::new(Track::Tags).json_binary().not_null())
-                    .col(ColumnDef::new(Track::Created).date_time().not_null())
-                    .col(ColumnDef::new(Track::Modified).date_time().not_null())
+                    .col(ColumnDef::new(Track::Created).timestamp_with_time_zone().not_null())
+                    .col(ColumnDef::new(Track::Modified).timestamp_with_time_zone().not_null())
                     .to_owned(),
             )
             .await

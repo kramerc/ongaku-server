@@ -13,9 +13,9 @@ impl Config {
             music_path: env::var("MUSIC_PATH").unwrap_or_else(|_| "/mnt/shucked/Music".to_string()),
             api_host: env::var("API_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
             api_port: env::var("API_PORT")
-                .unwrap_or_else(|_| "3000".to_string())
+                .unwrap_or_else(|_| "4000".to_string())
                 .parse()
-                .unwrap_or(3000),
+                .unwrap_or(4000),
             database_url: env::var("DATABASE_URL").unwrap_or_else(|_| "postgres://username:password@host:5432/database".to_string()),
         }
     }

@@ -7,7 +7,7 @@ This project includes comprehensive OpenAPI 3.0 documentation for the REST API.
 Once the server is running, you can access the API documentation in several ways:
 
 ### Interactive Web UI (Swagger UI)
-- **URL**: `http://localhost:3000/api/v1/docs`
+- **URL**: `http://localhost:4000/api/v1/docs`
 - **Description**: Interactive web interface where you can explore endpoints, view request/response schemas, and test API calls directly from your browser.
 - **Features**:
   - Browse all available endpoints
@@ -16,7 +16,7 @@ Once the server is running, you can access the API documentation in several ways
   - View example requests and responses
 
 ### OpenAPI Specification File
-- **URL**: `http://localhost:3000/api/v1/openapi.yaml`
+- **URL**: `http://localhost:4000/api/v1/openapi.yaml`
 - **Description**: Raw OpenAPI 3.0 specification in YAML format
 - **Use cases**:
   - Import into API testing tools (Postman, Insomnia, etc.)
@@ -79,22 +79,22 @@ Error responses include a JSON object with an `error` field containing the error
 
 ### Get first page of tracks
 ```bash
-curl "http://localhost:3000/api/v1/tracks?page=1&per_page=10"
+curl "http://localhost:4000/api/v1/tracks?page=1&per_page=10"
 ```
 
 ### Search for tracks
 ```bash
-curl "http://localhost:3000/api/v1/tracks/search?q=beatles"
+curl "http://localhost:4000/api/v1/tracks/search?q=beatles"
 ```
 
 ### Get library statistics
 ```bash
-curl "http://localhost:3000/api/v1/stats"
+curl "http://localhost:4000/api/v1/stats"
 ```
 
 ### Trigger rescan
 ```bash
-curl -X POST "http://localhost:3000/api/v1/rescan"
+curl -X POST "http://localhost:4000/api/v1/rescan"
 ```
 
 ## Development

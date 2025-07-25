@@ -8,7 +8,7 @@ The server can be configured using environment variables:
 
 - `MUSIC_PATH`: Path to your music library (default: `/mnt/shucked/Music`)
 - `API_HOST`: Host to bind the API server (default: `0.0.0.0`)
-- `API_PORT`: Port for the API server (default: `3000`)
+- `API_PORT`: Port for the API server (default: `4000`)
 - `DATABASE_URL`: Database connection string (default: `sqlite://ongaku.db?mode=rwc`)
 
 Copy `.env.example` to `.env` and modify as needed.
@@ -17,7 +17,7 @@ Copy `.env.example` to `.env` and modify as needed.
 
 ### Base URL
 ```
-http://localhost:3000/api/v1
+http://localhost:4000/api/v1
 ```
 
 ### Endpoints
@@ -36,7 +36,7 @@ List tracks with pagination and optional filters.
 
 **Example:**
 ```bash
-curl "http://localhost:3000/api/v1/tracks?page=1&per_page=10&artist=Beatles"
+curl "http://localhost:4000/api/v1/tracks?page=1&per_page=10&artist=Beatles"
 ```
 
 #### GET /tracks/:id
@@ -44,7 +44,7 @@ Get a specific track by ID.
 
 **Example:**
 ```bash
-curl "http://localhost:3000/api/v1/tracks/123"
+curl "http://localhost:4000/api/v1/tracks/123"
 ```
 
 #### GET /tracks/search
@@ -57,7 +57,7 @@ Search tracks across multiple fields.
 
 **Example:**
 ```bash
-curl "http://localhost:3000/api/v1/tracks/search?q=rock&page=1"
+curl "http://localhost:4000/api/v1/tracks/search?q=rock&page=1"
 ```
 
 #### GET /stats
@@ -65,7 +65,7 @@ Get database statistics including total tracks, duration, and unique counts.
 
 **Example:**
 ```bash
-curl "http://localhost:3000/api/v1/stats"
+curl "http://localhost:4000/api/v1/stats"
 ```
 
 #### GET /artists
@@ -73,7 +73,7 @@ Get list of unique artists.
 
 **Example:**
 ```bash
-curl "http://localhost:3000/api/v1/artists"
+curl "http://localhost:4000/api/v1/artists"
 ```
 
 #### GET /albums
@@ -81,7 +81,7 @@ Get list of unique albums.
 
 **Example:**
 ```bash
-curl "http://localhost:3000/api/v1/albums"
+curl "http://localhost:4000/api/v1/albums"
 ```
 
 #### GET /genres
@@ -89,7 +89,7 @@ Get list of unique genres.
 
 **Example:**
 ```bash
-curl "http://localhost:3000/api/v1/genres"
+curl "http://localhost:4000/api/v1/genres"
 ```
 
 #### POST /rescan
@@ -97,7 +97,7 @@ Trigger a rescan of the music library. This will scan for new, modified, or dele
 
 **Example:**
 ```bash
-curl -X POST "http://localhost:3000/api/v1/rescan"
+curl -X POST "http://localhost:4000/api/v1/rescan"
 ```
 
 **Response:**
@@ -173,7 +173,7 @@ cargo run
 
 The server will:
 1. Start scanning your music library (configured path in main.rs)
-2. Start the REST API server on http://localhost:3000
+2. Start the REST API server on http://localhost:4000
 3. Both processes run concurrently
 
 ## CORS
