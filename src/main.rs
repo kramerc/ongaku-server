@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use axum::Router;
+use axum::{Router, extract::Request, middleware::{self, Next}, response::Response, body::Body};
 use log::{debug, info, error};
 use sea_orm::{ConnectOptions, Database, DatabaseConnection, DbErr};
 use tokio::net::TcpListener;
@@ -14,6 +14,7 @@ mod api;
 mod config;
 mod scanner;
 mod lastfm;
+mod subsonic;
 
 #[tokio::main]
 async fn main() -> Result<(), DbErr> {
@@ -91,7 +92,9 @@ async fn start_api_server(db: DatabaseConnection, bind_address: String) -> Resul
     };
 
     let app = Router::new()
-        .nest("/api/v1", api::create_router(state))
+        .nest("/api/v1", api::create_router(state.clone()))
+        .nest("/rest", subsonic::create_subsonic_router(state))
+        .layer(middleware::from_fn(request_logging_middleware))
         .layer(CorsLayer::permissive());
 
     let listener = match TcpListener::bind(&bind_address).await {
@@ -120,6 +123,18 @@ async fn start_api_server(db: DatabaseConnection, bind_address: String) -> Resul
     info!("  POST /api/v1/tracks/:id/scrobble - Scrobble track to Last.fm");
     info!("  POST /api/v1/tracks/:id/now-playing - Update Last.fm now playing");
     info!("");
+    info!("🎵 Subsonic API endpoints available at:");
+    info!("  /rest/ping - Test server connectivity");
+    info!("  /rest/getMusicFolders - Get music folders");
+    info!("  /rest/getIndexes - Get artist index");
+    info!("  /rest/getArtists - Get all artists (ID3)");
+    info!("  /rest/getArtist?id=<id> - Get artist details");
+    info!("  /rest/getAlbum?id=<id> - Get album details");
+    info!("  /rest/getMusicDirectory?id=<id> - Get directory contents");
+    info!("  /rest/search3?query=<q> - Search artists, albums, songs");
+    info!("  /rest/stream?id=<id> - Stream audio file");
+    info!("  /rest/getGenres - Get list of genres");
+    info!("");
     info!("📖 API Documentation available at:");
     info!("  https://{}/api/v1/docs - Interactive Swagger UI", PUBLIC_ADDRESS);
     info!("  https://{}/api/v1/openapi.yaml - OpenAPI 3.0 specification", PUBLIC_ADDRESS);
@@ -130,4 +145,58 @@ async fn start_api_server(db: DatabaseConnection, bind_address: String) -> Resul
     }
 
     Ok(())
+}
+
+async fn request_logging_middleware(request: Request, next: Next) -> Response {
+    let method = request.method().clone();
+    let uri = request.uri().clone();
+    let user_agent = request
+        .headers()
+        .get("user-agent")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown");
+
+    let client_ip = request
+        .headers()
+        .get("x-forwarded-for")
+        .and_then(|h| h.to_str().ok())
+        .or_else(|| {
+            request
+                .headers()
+                .get("x-real-ip")
+                .and_then(|h| h.to_str().ok())
+        })
+        .unwrap_or("unknown");
+
+    let start = std::time::Instant::now();
+
+    info!("Request: {} {} from {} - {}", method, uri, client_ip, user_agent);
+
+    let response = next.run(request).await;
+    let duration = start.elapsed();
+    let status = response.status();
+
+    // Extract and log response body
+    let (parts, body) = response.into_parts();
+    let bytes = match axum::body::to_bytes(body, usize::MAX).await {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            error!("Failed to read response body: {}", e);
+            return Response::from_parts(parts, Body::from("Internal Server Error"));
+        }
+    };
+
+    // Log response with body (truncate if too long)
+    let body_str = String::from_utf8_lossy(&bytes);
+    let body_preview = if body_str.len() > 500 {
+        format!("{}... (truncated, {} bytes total)", &body_str[..500], bytes.len())
+    } else {
+        body_str.to_string()
+    };
+
+    info!("Response: {} {} - {} in {:.2}ms | Body: {}",
+          method, uri, status, duration.as_millis(), body_preview);
+
+    // Reconstruct response with the body
+    Response::from_parts(parts, Body::from(bytes))
 }

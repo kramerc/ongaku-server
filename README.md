@@ -6,9 +6,12 @@ A music library server built with Rust, using Axum for the HTTP API and PostgreS
 
 - Music library scanning and indexing
 - RESTful API for accessing track metadata
+- **Subsonic-compatible API** for use with Subsonic clients
 - Search functionality across tracks, artists, albums, and genres
+- Audio streaming with HTTP range request support
 - PostgreSQL database for reliable data storage
 - Automatic music library rescanning
+- Last.fm integration for scrobbling and now playing updates
 
 ## Prerequisites
 
@@ -96,6 +99,8 @@ The server will:
 
 ## API Endpoints
 
+### Native REST API
+
 - `GET /api/v1/tracks` - List tracks with pagination and filters
 - `GET /api/v1/tracks/:id` - Get a specific track by ID
 - `GET /api/v1/tracks/:id/play` - Stream audio file (supports HTTP range requests)
@@ -105,6 +110,52 @@ The server will:
 - `GET /api/v1/albums` - Get list of unique albums
 - `GET /api/v1/genres` - Get list of unique genres
 - `POST /api/v1/rescan` - Trigger a music library rescan
+- `GET /api/v1/lastfm/auth` - Get Last.fm authentication URL
+- `POST /api/v1/lastfm/session` - Create Last.fm session
+- `POST /api/v1/tracks/:id/scrobble` - Scrobble track to Last.fm
+- `POST /api/v1/tracks/:id/now-playing` - Update Last.fm now playing
+
+### Subsonic API
+
+Ongaku Server implements a subset of the [Subsonic API](http://www.subsonic.org/pages/api.jsp) specification, making it compatible with existing Subsonic clients. All endpoints are available under `/rest/`:
+
+- `GET /rest/ping` - Test server connectivity
+- `GET /rest/getLicense` - Get license information (always returns valid)
+- `GET /rest/getMusicFolders` - Get music folders
+- `GET /rest/getIndexes` - Get artist index organized by first letter
+- `GET /rest/getMusicDirectory?id=<id>` - Get directory contents (albums for artists, tracks for albums)
+- `GET /rest/getGenres` - Get list of genres
+- `GET /rest/search3?query=<query>` - Search artists, albums, and songs
+- `GET /rest/stream?id=<id>` - Stream audio file
+
+#### Subsonic API Usage
+
+To use with Subsonic clients, configure your client with:
+- **Server URL**: `http://your-server:8080/rest/`
+- **Username**: Any value (authentication is not currently enforced)
+- **Password**: Any value (authentication is not currently enforced)
+- **API Version**: 1.16.1
+
+#### Testing the Subsonic API
+
+Use the provided test script to verify the Subsonic API:
+
+```bash
+./test-subsonic-api.sh
+```
+
+Or test individual endpoints manually:
+
+```bash
+# Test ping
+curl "http://localhost:8080/rest/ping?u=test&v=1.16.1&c=test&f=json"
+
+# Get artist index
+curl "http://localhost:8080/rest/getIndexes?u=test&v=1.16.1&c=test&f=json"
+
+# Search for music
+curl "http://localhost:8080/rest/search3?u=test&v=1.16.1&c=test&f=json&query=your-search-term"
+```
 
 For detailed API documentation, visit `https://ongaku-dev.m3r.dev/api/v1/docs` when the server is running.
 
