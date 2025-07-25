@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use std::env;
+use std::fs;
+use std::path::PathBuf;
 use axum::{
     extract::{Path, State, Query},
     http::StatusCode,
@@ -8,8 +10,8 @@ use axum::{
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use log::{debug, error, warn};
+use rustfm_scrobble_proxy::{Scrobbler, Scrobble};
 use md5;
-use urlencoding;
 
 use entity::prelude::Track;
 use entity::track;
@@ -20,23 +22,25 @@ use crate::api::AppState;
 const LASTFM_API_URL: &str = "https://ws.audioscrobbler.com/2.0/";
 const LASTFM_AUTH_URL: &str = "https://www.last.fm/api/auth";
 
-// Last.fm API error codes as per documentation
-const LASTFM_ERROR_INVALID_SERVICE: i32 = 2;
-const LASTFM_ERROR_INVALID_METHOD: i32 = 3;
-const LASTFM_ERROR_AUTH_FAILED: i32 = 4;
-const LASTFM_ERROR_INVALID_FORMAT: i32 = 5;
-const LASTFM_ERROR_INVALID_PARAMS: i32 = 6;
-const LASTFM_ERROR_INVALID_RESOURCE: i32 = 7;
-const LASTFM_ERROR_OPERATION_FAILED: i32 = 8;
-const LASTFM_ERROR_INVALID_SESSION: i32 = 9;
-const LASTFM_ERROR_INVALID_API_KEY: i32 = 10;
-const LASTFM_ERROR_SERVICE_OFFLINE: i32 = 11;
-const LASTFM_ERROR_INVALID_SIGNATURE: i32 = 13;
-const LASTFM_ERROR_UNAUTHORIZED_TOKEN: i32 = 14;
-const LASTFM_ERROR_TOKEN_EXPIRED: i32 = 15;
-const LASTFM_ERROR_TEMP_ERROR: i32 = 16;
-const LASTFM_ERROR_SUSPENDED_API_KEY: i32 = 26;
-const LASTFM_ERROR_RATE_LIMIT: i32 = 29;
+// Session storage
+fn get_session_file_path() -> Result<PathBuf, String> {
+    let mut path = dirs::config_dir()
+        .ok_or("Could not determine config directory")?;
+    path.push("ongaku-server");
+    if !path.exists() {
+        fs::create_dir_all(&path)
+            .map_err(|e| format!("Failed to create config directory: {}", e))?;
+    }
+    path.push("lastfm_session");
+    Ok(path)
+}
+
+#[derive(Deserialize)]
+struct LastfmTokenResponse {
+    token: Option<String>,
+    error: Option<i32>,
+    message: Option<String>,
+}
 
 #[derive(Serialize)]
 pub struct LastfmAuthResponse {
@@ -90,69 +94,23 @@ pub struct NowPlayingResponse {
     pub message: String,
 }
 
-#[derive(Deserialize)]
-struct LastfmApiResponse {
-    token: Option<String>,
-    session: Option<LastfmSession>,
-    error: Option<i32>,
-    message: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct LastfmTokenResponse {
-    token: Option<String>,
-    error: Option<i32>,
-    message: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct LastfmSession {
-    name: String,
-    key: String,
-    #[allow(dead_code)]
-    subscriber: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct LastfmScrobbleResponse {
-    scrobbles: Option<LastfmScrobbles>,
-    error: Option<i32>,
-    message: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct LastfmScrobbles {
-    scrobble: Option<LastfmScrobble>,
-}
-
-#[derive(Deserialize)]
-struct LastfmScrobble {
-    track: Option<LastfmScrobbleTrack>,
-}
-
-#[derive(Deserialize)]
-struct LastfmScrobbleTrack {
-    #[serde(rename = "#text")]
-    text: Option<String>,
-}
-
 pub struct LastfmClient {
     client: Client,
     api_key: String,
-    shared_secret: String,
+    api_secret: String,
 }
 
 impl LastfmClient {
     pub fn new() -> Result<Self, String> {
         let api_key = env::var("LASTFM_API_KEY")
             .map_err(|_| "LASTFM_API_KEY environment variable not set")?;
-        let shared_secret = env::var("LASTFM_SHARED_SECRET")
+        let api_secret = env::var("LASTFM_SHARED_SECRET")
             .map_err(|_| "LASTFM_SHARED_SECRET environment variable not set")?;
 
         Ok(Self {
             client: Client::new(),
             api_key,
-            shared_secret,
+            api_secret,
         })
     }
 
@@ -161,8 +119,6 @@ impl LastfmClient {
         params.insert("method", "auth.gettoken");
         params.insert("api_key", &self.api_key);
         params.insert("format", "json");
-
-        // No longer adding callback URL since it's configured in Last.fm app settings
 
         let signature = self.generate_signature(&params);
         params.insert("api_sig", &signature);
@@ -182,24 +138,7 @@ impl LastfmClient {
             .map_err(|e| format!("Failed to parse JSON response: {}", e))?;
 
         if let Some(error) = api_response.error {
-            let error_msg = match error {
-                LASTFM_ERROR_INVALID_SERVICE => "Invalid service - This service does not exist",
-                LASTFM_ERROR_INVALID_METHOD => "Invalid Method - No method with that name exists in this package",
-                LASTFM_ERROR_AUTH_FAILED => "Authentication Failed - You do not have permissions to access the service",
-                LASTFM_ERROR_INVALID_FORMAT => "Invalid format - This service doesn't exist in that format",
-                LASTFM_ERROR_INVALID_PARAMS => "Invalid parameters - Your request is missing a required parameter",
-                LASTFM_ERROR_INVALID_RESOURCE => "Invalid resource specified",
-                LASTFM_ERROR_OPERATION_FAILED => "Operation failed - Something else went wrong",
-                LASTFM_ERROR_INVALID_SESSION => "Invalid session key - Please re-authenticate",
-                LASTFM_ERROR_INVALID_API_KEY => "Invalid API key - You must be granted a valid key by last.fm",
-                LASTFM_ERROR_SERVICE_OFFLINE => "Service Offline - This service is temporarily offline. Please try again later",
-                LASTFM_ERROR_INVALID_SIGNATURE => "Invalid method signature supplied",
-                LASTFM_ERROR_TEMP_ERROR => "There was a temporary error processing your request. Please try again",
-                LASTFM_ERROR_SUSPENDED_API_KEY => "Suspended API key - Access for your account has been suspended, please contact Last.fm",
-                LASTFM_ERROR_RATE_LIMIT => "Rate limit exceeded - Your IP has made too many requests in a short period",
-                _ => "Unknown error",
-            };
-            return Err(format!("Last.fm API error {}: {} - {}", error, error_msg, api_response.message.unwrap_or_default()));
+            return Err(format!("Last.fm API error {}: {}", error, api_response.message.unwrap_or_default()));
         }
 
         api_response.token.ok_or_else(|| "No token in response".to_string())
@@ -211,173 +150,71 @@ impl LastfmClient {
             return Err("Invalid token: token cannot be empty".to_string());
         }
 
-        let mut params = HashMap::new();
-        params.insert("method", "auth.getsession");
-        params.insert("api_key", &self.api_key);
-        params.insert("token", token);
-        params.insert("format", "json");
-
-        let signature = self.generate_signature(&params);
-        params.insert("api_sig", &signature);
-
         debug!("Creating Last.fm session for token: {}", &token[..std::cmp::min(8, token.len())]);
 
-        let response = self.client
-            .get(LASTFM_API_URL)
-            .query(&params)
-            .send()
-            .await
-            .map_err(|e| format!("HTTP request failed: {}", e))?;
+        let mut scrobbler = Scrobbler::new(&self.api_key, &self.api_secret);
 
-        let api_response: LastfmApiResponse = response
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse JSON response: {}", e))?;
+        match scrobbler.authenticate_with_token(token) {
+            Ok(session_response) => {
+                debug!("Successfully created session for user: {}", session_response.name);
 
-        if let Some(error) = api_response.error {
-            let error_msg = match error {
-                LASTFM_ERROR_AUTH_FAILED => "Authentication Failed - The token has not been authorized by the user",
-                LASTFM_ERROR_UNAUTHORIZED_TOKEN => "Unauthorized Token - This token has not been authorized",
-                LASTFM_ERROR_TOKEN_EXPIRED => "Token has expired",
-                _ => "Unknown authentication error",
-            };
-            return Err(format!("Last.fm API error {}: {} - {}", error, error_msg, api_response.message.unwrap_or_default()));
+                // Save session key to file for future use
+                if let Ok(session_path) = get_session_file_path() {
+                    if let Err(e) = fs::write(&session_path, &session_response.key) {
+                        warn!("Failed to save session key to file: {}", e);
+                    }
+                }
+
+                Ok((session_response.key, session_response.name))
+            },
+            Err(e) => Err(format!("Failed to create Last.fm session: {}", e))
         }
-
-        let session = api_response.session.ok_or_else(|| "No session in response".to_string())?;
-
-        debug!("Successfully created session for user: {}", session.name);
-        Ok((session.key, session.name))
     }
 
-    pub async fn scrobble_track(&self, session_key: &str, track: &track::Model, timestamp: i64, album_artist: Option<&str>) -> Result<Option<String>, String> {
-        // Validate session key format
-        if !self.validate_session_key(session_key) {
-            return Err("Invalid session key format".to_string());
-        }
-
+    pub async fn scrobble_track(&self, session_key: &str, track: &track::Model, timestamp: i64, _album_artist: Option<&str>) -> Result<Option<String>, String> {
         // Validate required track data
         if track.artist.trim().is_empty() || track.title.trim().is_empty() {
             return Err("Track must have both artist and title".to_string());
         }
 
-        let timestamp_str = timestamp.to_string();
-        let track_number_str = track.track_number.map(|n| n.to_string());
-        let duration_str = track.duration_seconds.to_string();
+        let mut scrobbler = Scrobbler::new(&self.api_key, &self.api_secret);
+        scrobbler.authenticate_with_session_key(session_key);
 
-        let mut params = HashMap::new();
-        params.insert("method", "track.scrobble");
-        params.insert("api_key", &self.api_key);
-        params.insert("sk", session_key);
-        params.insert("artist", &track.artist);
-        params.insert("track", &track.title);
-        params.insert("timestamp", &timestamp_str);
-        params.insert("album", &track.album);
+        let album = if track.album.trim().is_empty() { None } else { Some(track.album.as_str()) };
+        let mut scrobble = Scrobble::new(&track.artist, &track.title, album);
 
-        if let Some(album_artist) = album_artist {
-            params.insert("albumArtist", album_artist);
-        } else if !track.album_artist.is_empty() {
-            params.insert("albumArtist", &track.album_artist);
-        }
-
-        if let Some(ref track_number_str) = track_number_str {
-            params.insert("trackNumber", track_number_str);
-        }
-
-        if track.duration_seconds > 0 {
-            params.insert("duration", &duration_str);
-        }
-
-        params.insert("format", "json");
-
-        let signature = self.generate_signature(&params);
-        params.insert("api_sig", &signature);
+        // Set timestamp
+        scrobble.with_timestamp(timestamp as u64);
 
         debug!("Scrobbling track: {} - {} (timestamp: {})", track.artist, track.title, timestamp);
 
-        let response = self.client
-            .post(LASTFM_API_URL)
-            .form(&params)
-            .send()
-            .await
-            .map_err(|e| format!("HTTP request failed: {}", e))?;
-
-        let api_response: LastfmScrobbleResponse = response
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse JSON response: {}", e))?;
-
-        if let Some(error) = api_response.error {
-            return Err(format!("Last.fm API error {}: {}", error, api_response.message.unwrap_or_default()));
+        match scrobbler.scrobble(&scrobble) {
+            Ok(_response) => {
+                // The proxy library doesn't return scrobble IDs, so we return None
+                Ok(None)
+            },
+            Err(e) => Err(format!("Failed to scrobble track: {}", e))
         }
-
-        // Extract scrobble ID if available
-        let scrobble_id = api_response.scrobbles
-            .and_then(|s| s.scrobble)
-            .and_then(|s| s.track)
-            .and_then(|t| t.text);
-
-        Ok(scrobble_id)
     }
 
     pub async fn update_now_playing(&self, session_key: &str, track: &track::Model) -> Result<(), String> {
-        // Validate session key format
-        if !self.validate_session_key(session_key) {
-            return Err("Invalid session key format".to_string());
-        }
-
         // Validate required track data
         if track.artist.trim().is_empty() || track.title.trim().is_empty() {
             return Err("Track must have both artist and title".to_string());
         }
 
-        let track_number_str = track.track_number.map(|n| n.to_string());
-        let duration_str = track.duration_seconds.to_string();
+        let mut scrobbler = Scrobbler::new(&self.api_key, &self.api_secret);
+        scrobbler.authenticate_with_session_key(session_key);
 
-        let mut params = HashMap::new();
-        params.insert("method", "track.updateNowPlaying");
-        params.insert("api_key", &self.api_key);
-        params.insert("sk", session_key);
-        params.insert("artist", &track.artist);
-        params.insert("track", &track.title);
-        params.insert("album", &track.album);
-
-        if !track.album_artist.is_empty() {
-            params.insert("albumArtist", &track.album_artist);
-        }
-
-        if let Some(ref track_number_str) = track_number_str {
-            params.insert("trackNumber", track_number_str);
-        }
-
-        if track.duration_seconds > 0 {
-            params.insert("duration", &duration_str);
-        }
-
-        params.insert("format", "json");
-
-        let signature = self.generate_signature(&params);
-        params.insert("api_sig", &signature);
+        let album = if track.album.trim().is_empty() { None } else { Some(track.album.as_str()) };
+        let scrobble = Scrobble::new(&track.artist, &track.title, album);
 
         debug!("Updating now playing: {} - {}", track.artist, track.title);
 
-        let response = self.client
-            .post(LASTFM_API_URL)
-            .form(&params)
-            .send()
-            .await
-            .map_err(|e| format!("HTTP request failed: {}", e))?;
-
-        let api_response: LastfmApiResponse = response
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse JSON response: {}", e))?;
-
-        if let Some(error) = api_response.error {
-            return Err(format!("Last.fm API error {}: {}", error, api_response.message.unwrap_or_default()));
+        match scrobbler.now_playing(&scrobble) {
+            Ok(_response) => Ok(()),
+            Err(e) => Err(format!("Failed to update now playing: {}", e))
         }
-
-        Ok(())
     }
 
     pub fn build_auth_url(&self, token: &str) -> String {
@@ -405,10 +242,14 @@ impl LastfmClient {
         debug!("Generated auth URL: {}", auth_url);
 
         auth_url
-    }    /// Validates if a session key is in the correct format
-    pub fn validate_session_key(&self, session_key: &str) -> bool {
-        // Session keys should be non-empty strings
-        !session_key.trim().is_empty() && session_key.len() >= 10
+    }
+
+    /// Load existing session from file if available
+    pub fn load_existing_session(&self) -> Option<String> {
+        get_session_file_path()
+            .ok()
+            .and_then(|path| fs::read_to_string(path).ok())
+            .filter(|s| !s.trim().is_empty())
     }
 
     fn generate_signature(&self, params: &HashMap<&str, &str>) -> String {
@@ -422,7 +263,7 @@ impl LastfmClient {
             signature_string.push_str(key);
             signature_string.push_str(value);
         }
-        signature_string.push_str(&self.shared_secret);
+        signature_string.push_str(&self.api_secret);
 
         debug!("Signature string: {}", signature_string);
         let signature = format!("{:x}", md5::compute(signature_string.as_bytes()));
