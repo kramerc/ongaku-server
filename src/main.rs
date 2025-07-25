@@ -92,6 +92,10 @@ async fn start_api_server(db: DatabaseConnection, bind_address: String) {
     info!("  GET /api/v1/albums - Get list of albums");
     info!("  GET /api/v1/genres - Get list of genres");
     info!("  POST /api/v1/rescan - Trigger music library rescan");
+    info!("");
+    info!("📖 API Documentation available at:");
+    info!("  http://{}/api/v1/docs - Interactive Swagger UI", bind_address);
+    info!("  http://{}/api/v1/openapi.yaml - OpenAPI 3.0 specification", bind_address);
 
     axum::serve(listener, app).await.unwrap();
 }

@@ -13,6 +13,7 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use tower_http::services::ServeFile;
 
 use entity::prelude::Track;
 use entity::track;
@@ -114,6 +115,9 @@ pub fn create_router(state: AppState) -> Router {
         .route("/albums", get(get_albums))
         .route("/genres", get(get_genres))
         .route("/rescan", post(rescan_library))
+        // Documentation routes
+        .route_service("/docs", ServeFile::new("api-docs.html"))
+        .route_service("/openapi.yaml", ServeFile::new("openapi.yaml"))
         .with_state(state)
 }
 

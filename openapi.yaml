@@ -1,0 +1,528 @@
+openapi: 3.0.0
+info:
+  title: Ongaku Music Server API
+  description: |
+    A REST API for managing and querying a music library database.
+    
+    This API provides endpoints for:
+    - Browsing tracks with pagination and filtering
+    - Searching across tracks, artists, albums, and genres
+    - Retrieving individual track details
+    - Getting library statistics
+    - Managing music library rescans
+    
+    The server automatically scans a configured music directory and extracts metadata from audio files.
+  version: 1.0.0
+  contact:
+    name: Ongaku Music Server
+  license:
+    name: MIT
+servers:
+  - url: http://localhost:3000/api/v1
+    description: Local development server
+paths:
+  /tracks:
+    get:
+      summary: List tracks with pagination and optional filters
+      description: |
+        Retrieve a paginated list of tracks from the music library.
+        Supports filtering by title, artist, album, genre, and album artist.
+        Results are ordered by artist, album, then title.
+      parameters:
+        - name: page
+          in: query
+          description: Page number (1-based)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of tracks per page (max 100)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: title
+          in: query
+          description: Filter by track title (partial match)
+          required: false
+          schema:
+            type: string
+        - name: artist
+          in: query
+          description: Filter by artist name (partial match)
+          required: false
+          schema:
+            type: string
+        - name: album
+          in: query
+          description: Filter by album name (partial match)
+          required: false
+          schema:
+            type: string
+        - name: genre
+          in: query
+          description: Filter by genre (partial match)
+          required: false
+          schema:
+            type: string
+        - name: album_artist
+          in: query
+          description: Filter by album artist (partial match)
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response with track list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackListResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      tags:
+        - Tracks
+
+  /tracks/{id}:
+    get:
+      summary: Get track by ID
+      description: Retrieve a specific track by its unique identifier
+      parameters:
+        - name: id
+          in: path
+          description: Track ID
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Successful response with track details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Track'
+        '404':
+          description: Track not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      tags:
+        - Tracks
+
+  /tracks/search:
+    get:
+      summary: Search tracks
+      description: |
+        Search for tracks across title, artist, album, genre, and album artist fields.
+        Returns paginated results ordered by artist, album, then title.
+      parameters:
+        - name: q
+          in: query
+          description: Search query term
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: page
+          in: query
+          description: Page number (1-based)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of tracks per page (max 100)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Successful search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackListResponse'
+        '400':
+          description: Bad request (missing or empty search query)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      tags:
+        - Tracks
+        - Search
+
+  /stats:
+    get:
+      summary: Get database statistics
+      description: |
+        Retrieve statistics about the music library including total tracks,
+        total duration, and counts of unique artists, albums, and genres.
+      responses:
+        '200':
+          description: Successful response with library statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackStatsResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      tags:
+        - Statistics
+
+  /artists:
+    get:
+      summary: Get list of artists
+      description: |
+        Retrieve a list of all unique artists in the music library,
+        ordered alphabetically. Empty artist names are excluded.
+      responses:
+        '200':
+          description: Successful response with artist list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                example: ["Beatles, The", "Bob Dylan", "Led Zeppelin", "Pink Floyd"]
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      tags:
+        - Artists
+
+  /albums:
+    get:
+      summary: Get list of albums
+      description: |
+        Retrieve a list of all unique albums in the music library,
+        ordered alphabetically. Empty album names are excluded.
+      responses:
+        '200':
+          description: Successful response with album list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                example: ["Abbey Road", "Dark Side of the Moon", "Led Zeppelin IV", "The White Album"]
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      tags:
+        - Albums
+
+  /genres:
+    get:
+      summary: Get list of genres
+      description: |
+        Retrieve a list of all unique genres in the music library,
+        ordered alphabetically. Empty genre names are excluded.
+      responses:
+        '200':
+          description: Successful response with genre list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                example: ["Blues", "Classical", "Jazz", "Rock"]
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      tags:
+        - Genres
+
+  /rescan:
+    post:
+      summary: Trigger music library rescan
+      description: |
+        Initiate a background rescan of the music library.
+        The scan process will run asynchronously and update the database
+        with any new, modified, or removed tracks.
+      responses:
+        '200':
+          description: Rescan initiated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RescanResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      tags:
+        - Library Management
+
+components:
+  schemas:
+    Track:
+      type: object
+      description: A music track with metadata and technical information
+      required:
+        - id
+        - path
+        - extension
+        - title
+        - artist
+        - album
+        - genre
+        - album_artist
+        - publisher
+        - catalog_number
+        - duration_seconds
+        - audio_bitrate
+        - overall_bitrate
+        - sample_rate
+        - bit_depth
+        - channels
+        - tags
+        - created
+        - modified
+      properties:
+        id:
+          type: integer
+          format: int32
+          description: Unique track identifier
+          example: 1
+        path:
+          type: string
+          description: File system path to the audio file
+          example: "/music/Artists/The Beatles/Abbey Road/01 Come Together.flac"
+        extension:
+          type: string
+          description: File extension of the audio file
+          example: "flac"
+        title:
+          type: string
+          description: Track title
+          example: "Come Together"
+        artist:
+          type: string
+          description: Track artist
+          example: "The Beatles"
+        album:
+          type: string
+          description: Album name
+          example: "Abbey Road"
+        genre:
+          type: string
+          description: Music genre
+          example: "Rock"
+        album_artist:
+          type: string
+          description: Album artist (may differ from track artist)
+          example: "The Beatles"
+        publisher:
+          type: string
+          description: Record label or publisher
+          example: "Apple Records"
+        catalog_number:
+          type: string
+          description: Catalog number of the release
+          example: "PCS 7088"
+        duration_seconds:
+          type: integer
+          format: int32
+          description: Track duration in seconds
+          example: 259
+        audio_bitrate:
+          type: integer
+          format: int32
+          description: Audio bitrate in kbps
+          example: 1411
+        overall_bitrate:
+          type: integer
+          format: int32
+          description: Overall bitrate in kbps
+          example: 1411
+        sample_rate:
+          type: integer
+          format: int32
+          description: Sample rate in Hz
+          example: 44100
+        bit_depth:
+          type: integer
+          format: int32
+          description: Bit depth
+          example: 16
+        channels:
+          type: integer
+          format: int32
+          description: Number of audio channels
+          example: 2
+        tags:
+          type: object
+          description: Additional metadata tags as JSON object
+          example: {"MUSICBRAINZ_TRACKID": "abc123", "REPLAYGAIN_TRACK_GAIN": "-3.2 dB"}
+        created:
+          type: string
+          format: date-time
+          description: When the track was first added to the database
+          example: "2024-06-07T22:47:21Z"
+        modified:
+          type: string
+          format: date-time
+          description: When the track was last modified in the database
+          example: "2024-06-07T22:47:21Z"
+
+    TrackListResponse:
+      type: object
+      description: Paginated list of tracks
+      required:
+        - tracks
+        - total
+        - page
+        - per_page
+        - total_pages
+      properties:
+        tracks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Track'
+          description: Array of tracks for the current page
+        total:
+          type: integer
+          format: int64
+          description: Total number of tracks matching the query
+          example: 1250
+        page:
+          type: integer
+          format: int64
+          description: Current page number (1-based)
+          example: 1
+        per_page:
+          type: integer
+          format: int64
+          description: Number of tracks per page
+          example: 20
+        total_pages:
+          type: integer
+          format: int64
+          description: Total number of pages
+          example: 63
+
+    TrackStatsResponse:
+      type: object
+      description: Music library statistics
+      required:
+        - total_tracks
+        - total_duration_seconds
+        - unique_artists
+        - unique_albums
+        - unique_genres
+      properties:
+        total_tracks:
+          type: integer
+          format: int64
+          description: Total number of tracks in the library
+          example: 1250
+        total_duration_seconds:
+          type: integer
+          format: int64
+          description: Total duration of all tracks in seconds
+          example: 267890
+        unique_artists:
+          type: integer
+          format: int64
+          description: Number of unique artists
+          example: 89
+        unique_albums:
+          type: integer
+          format: int64
+          description: Number of unique albums
+          example: 156
+        unique_genres:
+          type: integer
+          format: int64
+          description: Number of unique genres
+          example: 12
+
+    RescanResponse:
+      type: object
+      description: Response from rescan operation
+      required:
+        - message
+        - status
+      properties:
+        message:
+          type: string
+          description: Human-readable message about the rescan operation
+          example: "Music library rescan initiated"
+        status:
+          type: string
+          description: Status of the rescan request
+          example: "success"
+
+    Error:
+      type: object
+      description: Error response
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Error message
+          example: "Track not found"
+
+tags:
+  - name: Tracks
+    description: Operations for managing and querying music tracks
+  - name: Search
+    description: Search functionality across the music library
+  - name: Statistics
+    description: Library statistics and metrics
+  - name: Artists
+    description: Operations for browsing artists
+  - name: Albums
+    description: Operations for browsing albums
+  - name: Genres
+    description: Operations for browsing genres
+  - name: Library Management
+    description: Operations for managing the music library
