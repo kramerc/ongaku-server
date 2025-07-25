@@ -91,7 +91,10 @@ pub async fn scan_music_library(
         stack.clear();
     }
 
-    scan_handle.await.unwrap();
+    if let Err(e) = scan_handle.await {
+        error!("Scan task failed: {:?}", e);
+        return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, format!("Scan task failed: {:?}", e))));
+    }
 
     let scan_result = ScanResult {
         files_scanned: total_files,
@@ -125,8 +128,21 @@ pub async fn get_all_modified_by_path(db: &DatabaseConnection) -> Result<HashMap
 
 pub fn count_files(path: &Path) -> u64 {
     let mut count = 0;
-    for entry in path.read_dir().unwrap() {
-        let entry = entry.unwrap();
+    let entries = match path.read_dir() {
+        Ok(entries) => entries,
+        Err(e) => {
+            error!("Failed to read directory {}: {:?}", path.display(), e);
+            return 0;
+        }
+    };
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) => {
+                error!("Failed to read directory entry: {:?}", e);
+                continue;
+            }
+        };
         let path = entry.path();
 
         if path.is_dir() {
@@ -140,16 +156,48 @@ pub fn count_files(path: &Path) -> u64 {
 
 #[async_recursion]
 pub async fn scan_dir(path: &Path, tx: &tokio::sync::mpsc::Sender<track::ActiveModel>, modified_by_path: &HashMap<String, chrono::DateTime<chrono::Utc>>, progress: &ml_progress::Progress) {
-    for entry in path.read_dir().unwrap() {
-        let entry = entry.unwrap();
+    let entries = match path.read_dir() {
+        Ok(entries) => entries,
+        Err(e) => {
+            error!("Failed to read directory {}: {:?}", path.display(), e);
+            return;
+        }
+    };
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) => {
+                error!("Failed to read directory entry: {:?}", e);
+                continue;
+            }
+        };
         let path = entry.path();
 
         if path.is_dir() {
             scan_dir(&path, &tx, &modified_by_path, progress).await;
         } else if path.is_file() {
-            let metadata = tokio::fs::metadata(&path).await.unwrap();
-            let modified: chrono::DateTime<chrono::Utc> = chrono::DateTime::from(metadata.modified().unwrap());
-            let modified_last_scan = match modified_by_path.get(path.to_str().unwrap()) {
+            let metadata = match tokio::fs::metadata(&path).await {
+                Ok(metadata) => metadata,
+                Err(e) => {
+                    error!("Failed to read metadata for {}: {:?}", path.display(), e);
+                    continue;
+                }
+            };
+            let modified: chrono::DateTime<chrono::Utc> = match metadata.modified() {
+                Ok(modified) => chrono::DateTime::from(modified),
+                Err(e) => {
+                    error!("Failed to get modified time for {}: {:?}", path.display(), e);
+                    continue;
+                }
+            };
+            let path_str = match path.to_str() {
+                Some(path_str) => path_str,
+                None => {
+                    error!("Failed to convert path to string: {}", path.display());
+                    continue;
+                }
+            };
+            let modified_last_scan = match modified_by_path.get(path_str) {
                 Some(modified) => modified.clone(),
                 None => chrono::DateTime::from(std::time::SystemTime::UNIX_EPOCH)
             };
@@ -159,12 +207,20 @@ pub async fn scan_dir(path: &Path, tx: &tokio::sync::mpsc::Sender<track::ActiveM
                 tokio::spawn(async move {
                     let track = read_tags(&path, &metadata).await;
                     match track {
-                        Ok(track) => tx.send(track).await.unwrap(),
+                        Ok(track) => {
+                            if let Err(e) = tx.send(track).await {
+                                error!("Failed to send track data through channel: {:?}", e);
+                            }
+                        },
                         Err(e) => {
                             // Only care about supported files
                             if lofty::file::FileType::from_path(&path).is_some() {
                                 error!("Error reading tags: {:?}", e);
-                                error!("In path: {}", path.to_str().unwrap());
+                                if let Some(path_str) = path.to_str() {
+                                    error!("In path: {}", path_str);
+                                } else {
+                                    error!("In path: {:?}", path);
+                                }
                             }
                         }
                     }
@@ -306,7 +362,10 @@ async fn read_tags(path: &Path, metadata: &Metadata) -> Result<track::ActiveMode
         sample_rate: Set(properties.sample_rate().unwrap_or(0) as i32),
         bit_depth: Set(properties.bit_depth().unwrap_or(0) as i32),
         channels: Set(properties.channels().unwrap_or(0) as i32),
-        tags: Set(serde_json::to_value(all_tags).unwrap()),
+        tags: Set(serde_json::to_value(all_tags).unwrap_or_else(|e| {
+            error!("Failed to serialize tags to JSON: {:?}", e);
+            serde_json::Value::Object(serde_json::Map::new())
+        })),
         created: Set(created),
         modified: Set(modified),
     })
