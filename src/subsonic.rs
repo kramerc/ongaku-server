@@ -648,8 +648,27 @@ async fn get_music_directory(
 
     } else if query.id.starts_with("album-") {
         // Return tracks for this album
-        let parts: Vec<&str> = query.id[6..].split('-').collect();
-        if parts.len() < 2 {
+        // Format: album-{encoded_artist}-{encoded_album}
+        // Handle special case where artist starts with hyphen by looking for double hyphens
+        let id_without_prefix = &query.id[6..]; // Remove "album-" prefix
+
+        let (artist_encoded, album_encoded) = if let Some(double_hyphen_pos) = id_without_prefix.find("--") {
+            // Special case: artist name starts with hyphen, look for double hyphen
+            let artist_part = &id_without_prefix[..double_hyphen_pos + 1]; // Include the first hyphen
+            let album_part = &id_without_prefix[double_hyphen_pos + 2..]; // Skip both hyphens
+            (artist_part, album_part)
+        } else {
+            // Normal case: split on first hyphen
+            if let Some(first_hyphen_pos) = id_without_prefix.find('-') {
+                let artist_part = &id_without_prefix[..first_hyphen_pos];
+                let album_part = &id_without_prefix[first_hyphen_pos + 1..];
+                (artist_part, album_part)
+            } else {
+                ("", "")
+            }
+        };
+
+        if artist_encoded.is_empty() || album_encoded.is_empty() {
             let xml_content = format!(
                 r#"<?xml version="1.0" encoding="UTF-8"?>
 <subsonic-response status="failed" version="{}">
@@ -663,8 +682,8 @@ async fn get_music_directory(
                 .unwrap();
         }
 
-        let artist_name = urlencoding::decode(parts[0]).unwrap_or_default();
-        let album_name = urlencoding::decode(parts[1]).unwrap_or_default();
+        let artist_name = urlencoding::decode(artist_encoded).unwrap_or_default();
+        let album_name = urlencoding::decode(album_encoded).unwrap_or_default();
 
         let tracks = match Track::find()
             .filter(
@@ -694,7 +713,7 @@ async fn get_music_directory(
         };
 
         // Build XML manually to match the expected format
-        let parent_id = format!("artist-{}", urlencoding::encode(&artist_name));
+        let parent_id = format!("artist-{}", artist_encoded);
         let mut xml_content = format!(
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <subsonic-response status="ok" version="{}">

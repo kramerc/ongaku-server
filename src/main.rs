@@ -186,12 +186,21 @@ async fn request_logging_middleware(request: Request, next: Next) -> Response {
         }
     };
 
-    // Log response with body (truncate if too long)
-    let body_str = String::from_utf8_lossy(&bytes);
-    let body_preview = if body_str.len() > 500 {
-        format!("{}... (truncated, {} bytes total)", &body_str[..500], bytes.len())
+    // Log response with body (truncate if too long, skip binary content)
+    let body_preview = if uri.path().contains("/stream") {
+        format!("(binary content, {} bytes)", bytes.len())
     } else {
-        body_str.to_string()
+        let body_str = String::from_utf8_lossy(&bytes);
+        if body_str.len() > 500 {
+            // Find a safe character boundary near 500 characters
+            let mut truncate_pos = 500.min(body_str.len());
+            while truncate_pos > 0 && !body_str.is_char_boundary(truncate_pos) {
+                truncate_pos -= 1;
+            }
+            format!("{}... (truncated, {} bytes total)", &body_str[..truncate_pos], bytes.len())
+        } else {
+            body_str.to_string()
+        }
     };
 
     info!("Response: {} {} - {} in {:.2}ms | Body: {}",
