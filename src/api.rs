@@ -2,7 +2,7 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::Json,
-    routing::get,
+    routing::{get, post},
     Router,
 };
 use sea_orm::{
@@ -19,6 +19,7 @@ use entity::track;
 #[derive(Clone)]
 pub struct AppState {
     pub db: DatabaseConnection,
+    pub music_path: String,
 }
 
 #[derive(Deserialize)]
@@ -111,6 +112,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/artists", get(get_artists))
         .route("/albums", get(get_albums))
         .route("/genres", get(get_genres))
+        .route("/rescan", post(rescan_library))
         .with_state(state)
 }
 
@@ -333,4 +335,41 @@ async fn get_genres(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(genres))
+}
+
+#[derive(Serialize)]
+pub struct RescanResponse {
+    pub message: String,
+    pub status: String,
+}
+
+// POST /rescan - Trigger a rescan of the music library
+async fn rescan_library(
+    State(state): State<AppState>,
+) -> Result<Json<RescanResponse>, StatusCode> {
+    let music_path = state.music_path.clone();
+    let db = state.db.clone();
+
+    tokio::spawn(async move {
+        let scan_config = crate::scanner::ScanConfig {
+            music_path,
+            show_progress: true,
+            batch_size: 100,
+        };
+
+        match crate::scanner::scan_music_library(&db, scan_config).await {
+            Ok(result) => {
+                println!("Rescan completed: {} files scanned, {} tracks processed",
+                        result.files_scanned, result.tracks_processed);
+            }
+            Err(e) => {
+                eprintln!("Error during rescan: {:?}", e);
+            }
+        }
+    });
+
+    Ok(Json(RescanResponse {
+        message: "Music library rescan initiated".to_string(),
+        status: "success".to_string(),
+    }))
 }

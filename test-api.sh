@@ -49,6 +49,12 @@ curl -s "$BASE_URL/albums" | jq '.[0:10]'
 echo
 echo
 
+# Test 8: Trigger rescan
+echo "8. Triggering music library rescan:"
+curl -s -X POST "$BASE_URL/rescan" | jq .
+echo
+echo
+
 echo "=== API Testing Complete ==="
 echo "Note: Some queries may return empty results if your database doesn't contain matching data."
 echo "Make sure jq is installed for pretty JSON formatting."

@@ -92,6 +92,24 @@ Get list of unique genres.
 curl "http://localhost:3000/api/v1/genres"
 ```
 
+#### POST /rescan
+Trigger a rescan of the music library. This will scan for new, modified, or deleted files and update the database accordingly.
+
+**Example:**
+```bash
+curl -X POST "http://localhost:3000/api/v1/rescan"
+```
+
+**Response:**
+```json
+{
+  "message": "Music library rescan initiated",
+  "status": "success"
+}
+```
+
+**Note:** The rescan runs in the background with a proper progress bar displayed in the server logs. You can monitor progress by watching the server console output or polling the `/stats` endpoint to see track count changes.
+
 ## Response Format
 
 All endpoints return JSON responses. List endpoints include pagination metadata.

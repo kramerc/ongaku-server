@@ -1,5 +1,4 @@
 use std::env;
-use std::path::Path;
 
 pub struct Config {
     pub music_path: String,
@@ -19,10 +18,6 @@ impl Config {
                 .unwrap_or(3000),
             database_url: env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://ongaku.db?mode=rwc".to_string()),
         }
-    }
-
-    pub fn music_path(&self) -> &Path {
-        Path::new(&self.music_path)
     }
 
     pub fn bind_address(&self) -> String {
